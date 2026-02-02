@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { HashRouter as Router, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom';
 import { 
   ShoppingBag, 
   Trophy, 
@@ -41,6 +41,7 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -157,7 +158,7 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
 
           <div className="hidden md:flex items-center gap-6">
             {navItems.map((item) => (
-              <Link key={item.path} to={item.path} className="flex items-center gap-2 text-slate-400 hover:text-blue-400 transition-all font-bold text-xs uppercase tracking-widest">
+              <Link key={item.path} to={item.path} className={`flex items-center gap-2 transition-all font-bold text-xs uppercase tracking-widest ${location.pathname === item.path ? 'text-blue-400' : 'text-slate-400 hover:text-blue-400'}`}>
                 <item.icon size={16} />
                 {item.label}
               </Link>
@@ -181,11 +182,11 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
                   <span className="text-sm font-black text-blue-400">{user.wallet_balance.toFixed(2)} DH</span>
                 </Link>
                 <Link to="/profile" className="p-0.5 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 hover:scale-110 transition-transform">
-                  <div className="w-8 h-8 rounded-full bg-[#020617] flex items-center justify-center">
-                    <User size={16} />
+                  <div className="w-8 h-8 rounded-full bg-[#020617] flex items-center justify-center overflow-hidden">
+                    {user.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" /> : <User size={16} />}
                   </div>
                 </Link>
-                <button onClick={handleLogout} className="text-slate-500 hover:text-red-400 transition-colors">
+                <button onClick={handleLogout} title="Log Out" className="text-slate-500 hover:text-red-400 transition-colors">
                   <LogOut size={20} />
                 </button>
               </div>
@@ -216,7 +217,7 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
       {isCartOpen && (
         <>
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]" onClick={() => setIsCartOpen(false)}></div>
-          <div className="fixed top-0 right-0 bottom-0 w-full max-w-sm glass border-l border-slate-800 z-[70] p-8 flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
+          <div className="fixed top-0 right-0 bottom-0 w-full max-sm:max-w-full sm:max-w-sm glass border-l border-slate-800 z-[70] p-8 flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
             <div className="flex items-center justify-between mb-8">
               <h2 className="text-2xl font-black flex items-center gap-3">
                 <ShoppingCart className="text-blue-400" /> Your Cart
@@ -269,10 +270,12 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
           <Route path="/shop" element={<ShopPage user={user} cart={cart} setCart={setCart} />} />
           <Route path="/tournaments" element={<TournamentPage />} />
           <Route path="/points" element={<PointShopPage user={user} />} />
-          <Route path="/profile" element={user ? <ProfilePage user={user} setUser={setUser} /> : <Navigate to="/login" />} />
+          <Route path="/profile" element={user ? <ProfilePage user={user} setUser={setUser} /> : <Navigate to="/login" replace />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/login" element={<LoginPage setUser={setUser} />} />
           <Route path="/signup" element={<SignUpPage />} />
+          {/* Catch-all route to handle redirects and invalid hashes from Supabase OAuth */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
 
@@ -326,7 +329,6 @@ export default function App() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Background fetcher for profile details
   const fetchProfileDetails = useCallback(async (userId: string, email: string) => {
     try {
       const { data: profile, error } = await supabase
@@ -350,26 +352,30 @@ export default function App() {
     } as UserProfile;
   }, []);
 
-  // Non-blocking user state updater
   const updateAuthState = useCallback(async (session: any) => {
     if (session) {
       const email = session.user.email || '';
       const userId = session.user.id;
+      const avatarUrl = session.user.user_metadata?.avatar_url || session.user.user_metadata?.picture;
       
-      // 1. Instantly set skeleton to prevent UI flicker/login button reappearing
       const skeleton: UserProfile = {
         id: userId,
         email: email,
-        username: email.split('@')[0] || 'Member',
+        username: session.user.user_metadata?.username || session.user.user_metadata?.full_name || email.split('@')[0] || 'Member',
         wallet_balance: 0.00,
         discord_points: 0,
-        role: 'user'
+        role: 'user',
+        avatar_url: avatarUrl
       };
       setUser(skeleton);
 
-      // 2. Fetch rich profile data in the background
       const fullProfile = await fetchProfileDetails(userId, email);
-      setUser(fullProfile);
+      // Merge full profile with session metadata for best data
+      setUser(prev => ({ 
+        ...skeleton, 
+        ...fullProfile, 
+        avatar_url: avatarUrl || fullProfile.avatar_url 
+      }));
     } else {
       setUser(null);
     }
@@ -378,15 +384,14 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
 
-    /**
-     * Why this works:
-     * 1. We start checkSession immediately.
-     * 2. Regardless of getSession succeeding/failing/hanging, the finally block ENSURES setLoading(false) runs.
-     * 3. We use a 'mounted' flag to prevent memory leaks and state updates on unmounted components.
-     * 4. onAuthStateChange is our persistent listener for OAuth redirects and token refreshes.
-     */
     const checkSession = async () => {
       try {
+        // Explicitly detect session in URL if HashRouter is being used
+        if (window.location.hash.includes('access_token=')) {
+          // Wait a tiny bit for Supabase library to auto-detect from hash
+          await new Promise(r => setTimeout(r, 500));
+        }
+
         const { data: { session } } = await supabase.auth.getSession();
         if (mounted) {
           if (session) {
@@ -397,28 +402,34 @@ export default function App() {
         console.error("Auth session check failed", err);
       } finally {
         if (mounted) {
-          setLoading(false); // ALWAYS release the loader
+          setLoading(false);
         }
       }
     };
 
     checkSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (mounted) {
-        await updateAuthState(session);
-        // Safety net: ensure loading is off if an event fires (like OAuth redirect completion)
-        setLoading(false);
+        if (session) {
+          await updateAuthState(session);
+        } else {
+          setUser(null);
+        }
+        
+        // Ensure loader is closed on any auth event (like redirect completion)
+        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'SIGNED_OUT') {
+           setLoading(false);
+        }
       }
     });
 
-    // Fail-safe: even if Supabase completely hangs, we don't want an infinite loader for more than 5 seconds
     const safetyTimeout = setTimeout(() => {
       if (mounted && loading) {
         console.warn("Auth check timed out, releasing loader");
         setLoading(false);
       }
-    }, 5000);
+    }, 4000);
 
     return () => {
       mounted = false;
@@ -432,9 +443,20 @@ export default function App() {
        <div className="relative w-24 h-24">
           <div className="absolute inset-0 border-4 border-blue-500/10 rounded-full"></div>
           <div className="absolute inset-0 border-4 border-blue-500 rounded-full border-t-transparent animate-spin"></div>
-          <img src={LOGO_URL} className="absolute inset-0 w-12 h-12 m-auto opacity-50" alt="Loader Logo" />
+          <img src={LOGO_URL} className="absolute inset-0 w-12 h-12 m-auto opacity-50 rounded-full" alt="Loader Logo" />
        </div>
-       <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600 animate-pulse">Entering Moon Orbit</span>
+       <div className="flex flex-col items-center gap-2">
+         <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600 animate-pulse">Entering Moon Orbit</span>
+         <div className="h-1 w-32 bg-slate-900 rounded-full overflow-hidden">
+            <div className="h-full bg-blue-500 animate-[loading_2s_ease-in-out_infinite]"></div>
+         </div>
+       </div>
+       <style>{`
+         @keyframes loading {
+           0% { transform: translateX(-100%); }
+           100% { transform: translateX(100%); }
+         }
+       `}</style>
     </div>
   );
 
