@@ -328,6 +328,17 @@ export default function App() {
 
   const fetchProfile = useCallback(async (userId: string, email: string) => {
     try {
+      // First, immediately return a skeleton profile to update the UI
+      const skeleton = {
+        id: userId,
+        email: email,
+        username: email.split('@')[0] || 'Member',
+        wallet_balance: 0.00,
+        discord_points: 0,
+        role: 'user'
+      } as UserProfile;
+
+      // Now fetch actual stats in the background
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
@@ -335,18 +346,10 @@ export default function App() {
         .single();
       
       if (profile) {
-        return profile;
+        return profile as UserProfile;
       }
       
-      // Fallback if profile trigger is slow or failed
-      return {
-        id: userId,
-        email: email,
-        username: email.split('@')[0] || 'Member',
-        wallet_balance: 0.00,
-        discord_points: 0,
-        role: 'user'
-      };
+      return skeleton;
     } catch (e) {
       return {
         id: userId,
@@ -355,21 +358,43 @@ export default function App() {
         wallet_balance: 0.00,
         discord_points: 0,
         role: 'user'
-      };
+      } as UserProfile;
     }
   }, []);
+
+  // Update logic to be non-blocking
+  const updateAuthState = useCallback(async (session: any) => {
+    if (session) {
+      const email = session.user.email || '';
+      const userId = session.user.id;
+      
+      // Step 1: Set instant partial user so the login button disappears
+      setUser(prev => prev || {
+        id: userId,
+        email: email,
+        username: email.split('@')[0] || 'Member',
+        wallet_balance: 0.00,
+        discord_points: 0,
+        role: 'user'
+      } as UserProfile);
+
+      // Step 2: Load full database stats in background
+      const fullProfile = await fetchProfile(userId, email);
+      setUser(fullProfile);
+    } else {
+      setUser(null);
+    }
+  }, [fetchProfile]);
 
   useEffect(() => {
     const initAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          const profile = await fetchProfile(session.user.id, session.user.email || '');
-          setUser(profile);
-        }
+        // Set loading to false as soon as we know the session status
+        setLoading(false); 
+        await updateAuthState(session);
       } catch (err) {
         console.error("Auth init failed", err);
-      } finally {
         setLoading(false);
       }
     };
@@ -377,16 +402,13 @@ export default function App() {
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session) {
-        const profile = await fetchProfile(session.user.id, session.user.email || '');
-        setUser(profile);
-      } else {
-        setUser(null);
-      }
+      await updateAuthState(session);
+      // In case session exists, make sure loading is off
+      if (session) setLoading(false);
     });
 
     return () => subscription.unsubscribe();
-  }, [fetchProfile]);
+  }, [updateAuthState]);
 
   if (loading) return (
     <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center space-y-6">
