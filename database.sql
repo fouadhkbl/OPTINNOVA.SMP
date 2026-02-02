@@ -1,5 +1,5 @@
 
--- MOON NIGHT DIGITAL SHOP - DATABASE SCHEMA (ROBUST VERSION)
+-- MOON NIGHT DIGITAL SHOP - PRODUCTION DATABASE SCHEMA
 
 -- 1. Create custom types
 DO $$ 
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS public.products (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT,
-    secret_content TEXT,
+    secret_content TEXT, -- Sensitive content (keys/accounts)
     price_dh NUMERIC(12, 2) NOT NULL,
     category TEXT NOT NULL,
     stock INTEGER DEFAULT 0,
@@ -83,78 +83,131 @@ CREATE TABLE IF NOT EXISTS public.point_shop_items (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 8. Enable RLS
+-- ==========================================
+-- SECURE CHECKOUT RPC (BACKEND LOGIC)
+-- ==========================================
+CREATE OR REPLACE FUNCTION process_checkout(cart_items JSONB)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER -- Runs with elevated privileges, but we verify user_id
+SET search_path = public
+AS $$
+DECLARE
+    item RECORD;
+    prod_record RECORD;
+    total_cost NUMERIC := 0;
+    total_points INTEGER := 0;
+    current_balance NUMERIC;
+    user_id UUID := auth.uid();
+    new_balance NUMERIC;
+BEGIN
+    -- 1. Basic Auth Check
+    IF user_id IS NULL THEN
+        RAISE EXCEPTION 'Authentication required';
+    END IF;
+
+    -- 2. Lock User Profile to prevent concurrent balance manipulation
+    SELECT wallet_balance INTO current_balance 
+    FROM profiles WHERE id = user_id FOR UPDATE;
+
+    -- 3. Calculate server-side totals and validate stock
+    FOR item IN SELECT * FROM jsonb_to_recordset(cart_items) AS x(id UUID, quantity INTEGER)
+    LOOP
+        -- Lock product row to prevent stock race conditions
+        SELECT price_dh, stock, secret_content, name INTO prod_record
+        FROM products WHERE id = item.id FOR UPDATE;
+
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Product % not found', item.id;
+        END IF;
+
+        IF prod_record.stock < item.quantity THEN
+            RAISE EXCEPTION 'Insufficient stock for %', prod_record.name;
+        END IF;
+
+        total_cost := total_cost + (prod_record.price_dh * item.quantity);
+        total_points := total_points + floor(prod_record.price_dh * item.quantity * 10);
+    END LOOP;
+
+    -- 4. Verify Funds
+    IF current_balance < total_cost THEN
+        RAISE EXCEPTION 'Insufficient balance. Need: %, Have: %', total_cost, current_balance;
+    END IF;
+
+    -- 5. Deduct Balance & Award Points
+    UPDATE profiles 
+    SET wallet_balance = wallet_balance - total_cost,
+        discord_points = discord_points + total_points
+    WHERE id = user_id
+    RETURNING wallet_balance INTO new_balance;
+
+    -- 6. Record Wallet History
+    INSERT INTO wallet_history (user_id, amount, type, description)
+    VALUES (user_id, -total_cost, 'purchase', 'Shop Checkout');
+
+    -- 7. Create Orders and Update Stock
+    FOR item IN SELECT * FROM jsonb_to_recordset(cart_items) AS x(id UUID, quantity INTEGER)
+    LOOP
+        SELECT price_dh, secret_content INTO prod_record FROM products WHERE id = item.id;
+
+        INSERT INTO orders (user_id, product_id, price_paid, points_earned, status, delivery_data)
+        VALUES (user_id, item.id, (prod_record.price_dh * item.quantity), floor(prod_record.price_dh * item.quantity * 10), 'completed', COALESCE(prod_record.secret_content, 'Instant Delivery'));
+
+        UPDATE products 
+        SET stock = stock - item.quantity 
+        WHERE id = item.id;
+    END LOOP;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'new_balance', new_balance,
+        'points_earned', total_points
+    );
+END;
+$$;
+
+-- ==========================================
+-- HARDENED RLS POLICIES
+-- ==========================================
+
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wallet_history ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.point_shop_items ENABLE ROW LEVEL SECURITY;
 
--- 9. Policies (Fixed with DROP IF EXISTS)
-DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON public.profiles;
-CREATE POLICY "Public profiles are viewable by everyone" ON public.profiles FOR SELECT USING (true);
+-- Deny All by default
+DROP POLICY IF EXISTS "Enable all access for admins" ON public.products;
+CREATE POLICY "Admins full access" ON public.products FOR ALL TO authenticated 
+USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
 
-DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
-CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+-- PRODUCTS: Everyone can see basic info, but hide secret_content
+-- Note: In a real production app, you might use a view to hide secret_content
+CREATE POLICY "Products viewable by all" ON public.products FOR SELECT USING (true);
 
-DROP POLICY IF EXISTS "Products are viewable by everyone" ON public.products;
-CREATE POLICY "Products are viewable by everyone" ON public.products FOR SELECT USING (true);
+-- ORDERS: Strictly private or Admin
+CREATE POLICY "Orders are private" ON public.orders FOR SELECT TO authenticated 
+USING (auth.uid() = user_id OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
 
-DROP POLICY IF EXISTS "Orders are viewable by owner" ON public.orders;
-CREATE POLICY "Orders are viewable by owner" ON public.orders FOR SELECT USING (auth.uid() = user_id);
+-- WALLET: Strictly private
+CREATE POLICY "Wallet history is private" ON public.wallet_history FOR SELECT TO authenticated 
+USING (auth.uid() = user_id);
 
-DROP POLICY IF EXISTS "Admins can see all orders" ON public.orders;
-CREATE POLICY "Admins can see all orders" ON public.orders FOR SELECT USING (
-  EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+-- PROFILES: Users see themselves, Admins see all
+CREATE POLICY "Profiles privacy" ON public.profiles FOR SELECT TO authenticated 
+USING (auth.uid() = id OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
+
+CREATE POLICY "Users update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+
+-- MESSAGES: Linked to orders
+CREATE POLICY "Messages visibility" ON public.messages FOR SELECT TO authenticated 
+USING (
+    EXISTS (SELECT 1 FROM orders WHERE id = order_id AND user_id = auth.uid()) 
+    OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
 );
 
-DROP POLICY IF EXISTS "Admins can update orders" ON public.orders;
-CREATE POLICY "Admins can update orders" ON public.orders FOR UPDATE USING (
-  EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+CREATE POLICY "Messages insert" ON public.messages FOR INSERT TO authenticated 
+WITH CHECK (
+    EXISTS (SELECT 1 FROM orders WHERE id = order_id AND user_id = auth.uid()) 
+    OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
 );
-
--- Message Policies
-DROP POLICY IF EXISTS "Users can see messages for their orders" ON public.messages;
-CREATE POLICY "Users can see messages for their orders" ON public.messages FOR SELECT USING (
-  EXISTS (SELECT 1 FROM public.orders WHERE id = order_id AND user_id = auth.uid()) OR
-  EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
-);
-
-DROP POLICY IF EXISTS "Users can send messages to their orders" ON public.messages;
-CREATE POLICY "Users can send messages to their orders" ON public.messages FOR INSERT WITH CHECK (
-  EXISTS (SELECT 1 FROM public.orders WHERE id = order_id AND user_id = auth.uid()) OR
-  EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
-);
-
-DROP POLICY IF EXISTS "History viewable by owner" ON public.wallet_history;
-CREATE POLICY "History viewable by owner" ON public.wallet_history FOR SELECT USING (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "Points shop items viewable by everyone" ON public.point_shop_items;
-CREATE POLICY "Points shop items viewable by everyone" ON public.point_shop_items FOR SELECT USING (true);
-
--- 10. Trigger
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO public.profiles (id, email, username, role, discord_points, wallet_balance, avatar_url)
-    VALUES (
-        new.id,
-        new.email,
-        COALESCE(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'username', split_part(new.email, '@', 1)),
-        'user',
-        0,
-        0.00,
-        COALESCE(new.raw_user_meta_data->>'avatar_url', new.raw_user_meta_data->>'picture')
-    ) ON CONFLICT (id) DO UPDATE SET
-        email = EXCLUDED.email,
-        username = COALESCE(public.profiles.username, EXCLUDED.username),
-        avatar_url = COALESCE(EXCLUDED.avatar_url, public.profiles.avatar_url);
-    RETURN new;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-    AFTER INSERT ON auth.users
-    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();

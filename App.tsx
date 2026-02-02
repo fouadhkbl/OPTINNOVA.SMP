@@ -1,30 +1,7 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { HashRouter as Router, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom';
-import { 
-  ShoppingBag, 
-  Trophy, 
-  User, 
-  LayoutDashboard, 
-  Home as HomeIcon, 
-  PlusCircle, 
-  Wallet, 
-  LogOut, 
-  Info, 
-  Store,
-  Menu,
-  X,
-  ShieldCheck,
-  Zap,
-  ShoppingCart,
-  Trash2,
-  Lock,
-  Loader2,
-  CheckCircle2
-} from 'lucide-react';
 import { supabase } from './lib/supabase';
-import { UserProfile, CartItem, Product } from './types';
-import { LOGO_URL, APP_NAME, DISCORD_LINK, ADMIN_PASSWORD } from './constants.tsx';
+import { UserProfile, CartItem } from './types';
+import { LOGO_URL, APP_NAME } from './constants.tsx';
 
 // Pages
 import HomePage from './pages/HomePage';
@@ -37,7 +14,6 @@ import LoginPage from './pages/LoginPage';
 import SignUpPage from './pages/SignUpPage';
 
 const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, setUser: any, cart: CartItem[], setCart: any }) => {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -48,10 +24,8 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
     if (isLoggingOut) return;
     setIsLoggingOut(true);
     try {
-      // Immediate UI update for speed
       setUser(null);
       await supabase.auth.signOut();
-      // Hard refresh is requested for "fast and clean" account switching
       window.location.href = window.location.origin + window.location.pathname;
     } catch (e) {
       console.error("Logout failed", e);
@@ -66,8 +40,8 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
     { label: 'Points Store', icon: Store, path: '/points' },
   ];
 
-  const cartTotal = cart.reduce((sum, item) => sum + (item.price_dh * item.quantity), 0);
-  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const cartTotal = useMemo(() => cart.reduce((sum, item) => sum + (item.price_dh * item.quantity), 0), [cart]);
+  const cartCount = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart]);
 
   const removeFromCart = (productId: string) => {
     setCart(cart.filter(item => item.id !== productId));
@@ -81,74 +55,36 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
     }
 
     if (user.wallet_balance < cartTotal) {
-      alert(`Insufficient balance! You need ${(cartTotal - user.wallet_balance).toFixed(2)} more DH. Go to Profile to top up.`);
+      alert(`Insufficient balance! Top up in your profile.`);
       setIsCartOpen(false);
       navigate('/profile');
       return;
     }
 
+    if (isCheckingOut) return;
     setIsCheckingOut(true);
 
     try {
-      for (const item of cart) {
-        const pointsEarned = Math.floor(item.price_dh * item.quantity * 10);
-        const { error: orderError } = await supabase.from('orders').insert({
-          user_id: user.id,
-          product_id: item.id,
-          price_paid: item.price_dh * item.quantity,
-          points_earned: pointsEarned,
-          status: 'completed',
-          delivery_data: item.secret_content || 'Instant Delivery'
-        });
-        if (orderError) throw orderError;
-
-        const { error: stockError } = await supabase
-          .from('products')
-          .update({ stock: Math.max(0, item.stock - item.quantity) })
-          .eq('id', item.id);
-        if (stockError) throw stockError;
-      }
-
-      const totalPointsEarned = Math.floor(cartTotal * 10);
-      const { data: updatedProfile, error: profileError } = await supabase
-        .from('profiles')
-        .update({ 
-          wallet_balance: user.wallet_balance - cartTotal,
-          discord_points: Number(user.discord_points) + totalPointsEarned
-        })
-        .eq('id', user.id)
-        .select()
-        .single();
-
-      if (profileError) throw profileError;
-
-      await supabase.from('wallet_history').insert({
-        user_id: user.id,
-        amount: -cartTotal,
-        type: 'purchase',
-        description: `Order Purchase: ${cart.map(i => i.name).join(', ')}`
+      // ATOMIC BACKEND CHECKOUT: This re-validates price, stock, and balance in one SQL transaction
+      const { data, error } = await supabase.rpc('process_checkout', {
+        cart_items: cart.map(item => ({ id: item.id, quantity: item.quantity }))
       });
 
-      setUser(updatedProfile);
-      setCart([]);
-      alert("Order Successful! Your digital items are now available in your Profile.");
-      setIsCartOpen(false);
-      navigate('/profile');
+      if (error) throw error;
+
+      if (data?.success) {
+        // Sync local profile state with the result of the backend transaction
+        setUser((prev: any) => prev ? { ...prev, wallet_balance: data.new_balance, discord_points: (Number(prev.discord_points) || 0) + data.points_earned } : null);
+        setCart([]);
+        setIsCartOpen(false);
+        alert("Success! Your items are now available in your profile.");
+        navigate('/profile');
+      }
     } catch (err: any) {
-      console.error("Checkout error:", err);
-      alert("Checkout failed: " + err.message);
+      console.error("Checkout failed:", err);
+      alert(err.message || "An unexpected error occurred during checkout.");
     } finally {
       setIsCheckingOut(false);
-    }
-  };
-
-  const handleAdminAccess = () => {
-    const pass = prompt("Enter Admin Access Key:");
-    if (pass === ADMIN_PASSWORD) {
-      sessionStorage.setItem('is_admin_auth', 'true');
-      navigate('/admin');
-    } else if (pass !== null) {
-      alert("Invalid Moon Access Key");
     }
   };
 
@@ -157,11 +93,8 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
       <nav className="sticky top-0 z-50 glass border-b border-slate-800/50 px-4 md:px-8 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3 group">
-            <div className="relative">
-              <div className="absolute inset-0 bg-blue-500 blur-md opacity-0 group-hover:opacity-40 transition-opacity"></div>
-              <img src={LOGO_URL} alt="Moon Night Logo" className="relative w-10 h-10 object-contain rounded-full bg-slate-950 border border-slate-800" />
-            </div>
-            <span className="text-xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-600">
+            <img src={LOGO_URL} alt="Moon Night Logo" className="w-10 h-10 object-contain rounded-full" />
+            <span className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-600">
               {APP_NAME}
             </span>
           </Link>
@@ -173,10 +106,16 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
                 {item.label}
               </Link>
             ))}
+            {user?.role === 'admin' && (
+               <Link to="/admin" className="flex items-center gap-2 text-red-400 hover:text-red-300 transition-all font-bold text-xs uppercase tracking-widest">
+                <Lock size={16} />
+                Admin
+              </Link>
+            )}
           </div>
 
           <div className="flex items-center gap-4">
-            <button onClick={() => setIsCartOpen(!isCartOpen)} className="relative p-2 text-slate-400 hover:text-blue-400 transition-all">
+            <button onClick={() => setIsCartOpen(!isCartOpen)} className="relative p-2 text-slate-400 hover:text-blue-400">
               <ShoppingCart size={22} />
               {cartCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full ring-2 ring-[#020617]">
@@ -186,87 +125,66 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
             </button>
 
             {user ? (
-              <div className="flex items-center gap-4 animate-in fade-in duration-300">
-                <Link to="/profile" className="hidden sm:flex flex-col items-end mr-2">
+              <div className="flex items-center gap-4">
+                <Link to="/profile" className="hidden sm:flex flex-col items-end">
                   <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest">Balance</span>
-                  <span className="text-sm font-black text-blue-400">{user.wallet_balance?.toFixed(2) || '0.00'} DH</span>
+                  <span className="text-sm font-black text-blue-400">{user.wallet_balance?.toFixed(2)} DH</span>
                 </Link>
-                <Link to="/profile" className="p-0.5 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 hover:scale-110 transition-transform">
-                  <div className="w-8 h-8 rounded-full bg-[#020617] flex items-center justify-center overflow-hidden">
-                    {user.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" alt="User Avatar" /> : <User size={16} />}
-                  </div>
+                <Link to="/profile" className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center overflow-hidden border border-slate-700">
+                  {user.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" /> : <User size={16} />}
                 </Link>
-                <button onClick={handleLogout} disabled={isLoggingOut} title="Log Out" className="text-slate-500 hover:text-red-400 transition-colors">
+                <button onClick={handleLogout} disabled={isLoggingOut} className="text-slate-500 hover:text-red-400">
                   {isLoggingOut ? <Loader2 size={20} className="animate-spin" /> : <LogOut size={20} />}
                 </button>
               </div>
             ) : (
-              <Link to="/login" className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-xl shadow-blue-600/20">
+              <Link to="/login" className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-xl font-black text-xs uppercase tracking-widest">
                 Log In
               </Link>
             )}
-
-            <button className="md:hidden text-slate-400" onClick={() => setIsMenuOpen(!isMenuOpen)}>
-              {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
-            </button>
           </div>
         </div>
-
-        {isMenuOpen && (
-          <div className="md:hidden absolute top-full left-0 right-0 glass border-b border-slate-800 p-6 space-y-4 animate-in slide-in-from-top duration-300">
-            {navItems.map((item) => (
-              <Link key={item.path} to={item.path} onClick={() => setIsMenuOpen(false)} className="flex items-center gap-4 text-slate-300 hover:text-blue-400 py-3 transition-colors font-bold uppercase text-xs tracking-widest">
-                <item.icon size={20} />
-                {item.label}
-              </Link>
-            ))}
-          </div>
-        )}
       </nav>
 
+      {/* Cart Drawer */}
       {isCartOpen && (
         <>
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]" onClick={() => setIsCartOpen(false)}></div>
-          <div className="fixed top-0 right-0 bottom-0 w-full max-sm:max-w-full sm:max-w-sm glass border-l border-slate-800 z-[70] p-8 flex flex-col shadow-2xl animate-in slide-in-from-right duration-300">
+          <div className="fixed top-0 right-0 bottom-0 w-full sm:max-w-sm glass border-l border-slate-800 z-[70] p-8 flex flex-col animate-in slide-in-from-right">
             <div className="flex items-center justify-between mb-8">
-              <h2 className="text-2xl font-black flex items-center gap-3">
-                <ShoppingCart className="text-blue-400" /> Your Cart
-              </h2>
-              <button onClick={() => setIsCartOpen(false)} className="text-slate-500 hover:text-white">
-                <X size={24} />
-              </button>
+              <h2 className="text-2xl font-black flex items-center gap-3 tracking-tight">Cart</h2>
+              <button onClick={() => setIsCartOpen(false)} className="hover:rotate-90 transition-transform"><X size={24} /></button>
             </div>
 
-            <div className="flex-grow overflow-y-auto space-y-4 pr-2 scrollbar-none">
+            <div className="flex-grow overflow-y-auto space-y-4 pr-2 custom-scrollbar">
               {cart.length === 0 ? (
-                <div className="text-center py-20 space-y-4 opacity-50">
-                  <ShoppingBag size={64} className="mx-auto text-slate-800" />
-                  <p className="font-bold text-slate-600 uppercase tracking-widest text-xs">Your Moon Cart is Empty</p>
+                <div className="text-center py-20 opacity-30">
+                  <ShoppingCart size={48} className="mx-auto mb-4" />
+                  <p className="font-black text-xs uppercase tracking-widest">Your cart is empty</p>
                 </div>
-              ) : (
-                cart.map(item => (
-                  <div key={item.id} className="p-4 rounded-3xl bg-slate-900/50 border border-slate-800 flex items-center gap-4 hover:border-blue-500/30 transition-all group">
-                    <img src={item.image_url || `https://picsum.photos/seed/${item.id}/80/80`} className="w-16 h-16 rounded-2xl object-cover border border-slate-800" alt={item.name} />
-                    <div className="flex-grow">
-                      <h4 className="font-bold text-sm text-slate-200">{item.name}</h4>
-                      <p className="text-blue-400 font-black text-xs">{item.price_dh} DH <span className="text-slate-600">x {item.quantity}</span></p>
-                    </div>
-                    <button onClick={() => removeFromCart(item.id)} className="p-2 text-slate-700 hover:text-red-400 transition-colors">
-                      <Trash2 size={18} />
-                    </button>
+              ) : cart.map(item => (
+                <div key={item.id} className="p-4 rounded-2xl bg-slate-900/50 border border-slate-800 flex items-center gap-4">
+                  <div className="flex-grow">
+                    <h4 className="font-bold text-sm text-slate-200">{item.name}</h4>
+                    <p className="text-blue-400 font-black text-xs">{item.price_dh} DH × {item.quantity}</p>
                   </div>
-                ))
-              )}
+                  <button onClick={() => removeFromCart(item.id)} className="text-slate-600 hover:text-red-400 transition-colors"><Trash2 size={18} /></button>
+                </div>
+              ))}
             </div>
 
             {cart.length > 0 && (
               <div className="mt-8 pt-6 border-t border-slate-800 space-y-6">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500 uppercase tracking-widest text-[10px] font-black">Subtotal</span>
-                  <span className="text-3xl font-black text-white">{cartTotal.toFixed(2)} <span className="text-sm text-slate-600">DH</span></span>
+                <div className="flex justify-between items-center px-2">
+                  <span className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Subtotal</span>
+                  <span className="text-2xl font-black text-white">{cartTotal.toFixed(2)} DH</span>
                 </div>
-                <button disabled={isCheckingOut} onClick={handleCheckout} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-[2rem] font-black uppercase tracking-widest transition-all shadow-xl shadow-blue-600/30 flex items-center justify-center gap-3">
-                  {isCheckingOut ? <><Loader2 size={20} className="animate-spin" /> Processing...</> : 'Confirm Purchase'}
+                <button 
+                  disabled={isCheckingOut} 
+                  onClick={handleCheckout} 
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-3xl font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3 shadow-xl shadow-blue-600/20 disabled:opacity-50"
+                >
+                  {isCheckingOut ? <Loader2 className="animate-spin" /> : 'Confirm Order'}
                 </button>
               </div>
             )}
@@ -281,148 +199,60 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
           <Route path="/tournaments" element={<TournamentPage />} />
           <Route path="/points" element={<PointShopPage user={user} />} />
           <Route path="/profile" element={user ? <ProfilePage user={user} setUser={setUser} /> : <Navigate to="/login" replace />} />
-          <Route path="/admin" element={<AdminPage />} />
+          <Route path="/admin" element={user?.role === 'admin' ? <AdminPage /> : <Navigate to="/" replace />} />
           <Route path="/login" element={<LoginPage setUser={setUser} />} />
           <Route path="/signup" element={<SignUpPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
-
-      <footer className="mt-auto py-16 px-8 border-t border-slate-800 bg-slate-950/40 relative overflow-hidden">
-        <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-600/5 blur-[120px] -z-10 rounded-full"></div>
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-12 items-center">
-          <div className="flex flex-col items-center md:items-start space-y-4">
-            <Link to="/" className="flex items-center gap-3">
-              <img src={LOGO_URL} alt="Moon Night Logo" className="w-12 h-12 rounded-full bg-slate-950 border border-slate-800" />
-              <span className="text-2xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-600">{APP_NAME}</span>
-            </Link>
-            <p className="text-slate-500 text-sm max-w-xs text-center md:text-left font-medium leading-relaxed">
-              The #1 premium digital ecosystem for accounts, keys and elite gaming services. Trusted by 7k+ legends on Discord.
-            </p>
-          </div>
-
-          <div className="flex justify-center gap-16">
-            <div className="flex flex-col gap-4">
-              <span className="text-white font-black text-[10px] uppercase tracking-[0.2em] mb-2">Universe</span>
-              <Link to="/shop" className="text-slate-500 hover:text-blue-400 text-sm font-bold transition-all">Shop</Link>
-              <Link to="/tournaments" className="text-slate-500 hover:text-blue-400 text-sm font-bold transition-all">Events</Link>
-              <a href={DISCORD_LINK} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-blue-400 text-sm font-bold transition-all">Discord</a>
-            </div>
-            <div className="flex flex-col gap-4">
-              <span className="text-white font-black text-[10px] uppercase tracking-[0.2em] mb-2">Systems</span>
-              {user?.email === 'grosafzemb@gmail.com' && (
-                <button onClick={handleAdminAccess} className="text-slate-500 hover:text-blue-400 text-sm font-bold flex items-center gap-2 transition-all text-left">
-                  <Lock size={14} /> Admin Access
-                </button>
-              )}
-              <Link to="/points" className="text-slate-500 hover:text-blue-400 text-sm font-bold transition-all">Point Shop</Link>
-            </div>
-          </div>
-
-          <div className="flex flex-col items-center md:items-end space-y-4">
-            <div className="flex gap-4">
-              <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 hover:text-blue-400 transition-colors cursor-pointer"><ShieldCheck size={20}/></div>
-              <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 hover:text-blue-400 transition-colors cursor-pointer"><Zap size={20}/></div>
-              <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 hover:text-blue-400 transition-colors cursor-pointer"><ShoppingCart size={20}/></div>
-            </div>
-            <p className="text-slate-700 text-[10px] font-black uppercase tracking-widest">Powered by Moon Tech © {new Date().getFullYear()}</p>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 };
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    const saved = localStorage.getItem('moon-cart');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [loading, setLoading] = useState(true);
-  const isAuthProcessed = useRef(false);
 
-  const fetchProfileDetails = useCallback(async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-      if (error) throw error;
-      return data as UserProfile;
-    } catch (e: any) {
-      if (e.name !== 'AbortError') {
-        console.warn("Profile sync deferred. Might be a new user or network issue.");
-      }
-      return null;
-    }
-  }, []);
+  useEffect(() => {
+    localStorage.setItem('moon-cart', JSON.stringify(cart));
+  }, [cart]);
 
   const updateAuthState = useCallback(async (session: any) => {
     if (session?.user) {
-      const email = session.user.email || '';
-      const userId = session.user.id;
-      const meta = session.user.user_metadata || {};
+      // SECURE: Strictly fetch only necessary profile fields
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', session.user.id)
+        .single();
       
-      const identity: UserProfile = {
-        id: userId,
-        email: email,
-        username: meta.full_name || meta.username || email.split('@')[0],
-        wallet_balance: 0,
-        discord_points: 0,
-        role: 'user',
-        avatar_url: meta.avatar_url || meta.picture || meta.avatar
-      };
-      
-      // Update UI immediately with JWT identity
-      setUser(identity);
-
-      // Fetch wallet balance and roles in background
-      const profile = await fetchProfileDetails(userId);
-      if (profile) {
-        setUser(prev => prev ? ({ ...prev, ...profile }) : profile);
+      if (!error && profile) {
+        setUser(profile);
       }
     } else {
       setUser(null);
     }
     setLoading(false);
-  }, [fetchProfileDetails]);
+  }, []);
 
   useEffect(() => {
-    let mounted = true;
-
-    // Use onAuthStateChange as the single source of truth for both initial session and updates
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return;
-      
-      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') {
-        await updateAuthState(session);
-      } else if (event === 'SIGNED_OUT') {
-        setUser(null);
-        setLoading(false);
-      }
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      updateAuthState(session);
     });
+    return () => subscription.unsubscribe();
+  }, [updateAuthState]);
 
-    // Timeout fallback to prevent stuck loader if Supabase is unresponsive
-    const timeout = setTimeout(() => {
-      if (mounted && loading) setLoading(false);
-    }, 5000);
-
-    return () => {
-      mounted = false;
-      subscription.unsubscribe();
-      clearTimeout(timeout);
-    };
-  }, [updateAuthState, loading]);
-
-  if (loading) return (
-    <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center space-y-6">
-       <div className="relative w-24 h-24">
-          <div className="absolute inset-0 border-4 border-blue-500/10 rounded-full"></div>
-          <div className="absolute inset-0 border-4 border-blue-500 rounded-full border-t-transparent animate-spin"></div>
-          <img src={LOGO_URL} className="absolute inset-0 w-12 h-12 m-auto opacity-50 rounded-full" alt="Loader Logo" />
-       </div>
-       <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600 animate-pulse">Entering Moon Orbit</span>
-    </div>
-  );
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#020617] flex items-center justify-center">
+        <Loader2 className="animate-spin text-blue-500" size={48} />
+      </div>
+    );
+  }
 
   return (
     <Router>

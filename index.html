@@ -3,19 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Moon Night Digital Shop</title>
+  <title>Moon Night | Digital Shop</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://www.paypal.com/sdk/js?client-id=AZVpU1vUh4HC_6QK2T5e9pXXMwLsu3yNUmjvMMEp_CsEwaN4CwLfRzfLnZqpC9bRyeeQ1mDvMhqx2-Zq&currency=USD"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://www.paypal.com/sdk/js?client-id=sb&currency=USD"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "react-router-dom": "https://esm.sh/react-router-dom@^7.13.0",
+      "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.93.3",
+      "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+      "react/": "https://esm.sh/react@^19.2.4/",
+      "react": "https://esm.sh/react@^19.2.4",
+      "lucide-react": "https://esm.sh/lucide-react@^0.563.0"
+    }
+  }
+  </script>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+    
     body {
-      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-family: 'Inter', sans-serif;
       background-color: #020617;
-      color: #f8fafc;
+      margin: 0;
+      color: white;
       overflow-x: hidden;
     }
+
+    /* Standard Scrollbar */
     ::-webkit-scrollbar {
       width: 8px;
     }
@@ -29,29 +43,40 @@
     ::-webkit-scrollbar-thumb:hover {
       background: #334155;
     }
-    .gradient-text {
-      background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
+    
     .glass {
       background: rgba(15, 23, 42, 0.7);
       backdrop-filter: blur(12px);
-      border: 1px solid rgba(51, 65, 85, 0.5);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(51, 65, 85, 0.4);
+    }
+
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 5px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(51, 65, 85, 0.6);
+      border-radius: 10px;
+    }
+
+    .gradient-text {
+      background: linear-gradient(to right, #60a5fa, #818cf8, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    @keyframes fade-in {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .animate-fade-in {
+      animation: fade-in 0.5s ease-out forwards;
     }
   </style>
-  <script type="importmap">
-  {
-    "imports": {
-      "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-      "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
-      "react/": "https://esm.sh/react@^19.2.4/",
-      "react": "https://esm.sh/react@^19.2.4",
-      "react-router-dom": "https://esm.sh/react-router-dom@^7.13.0",
-      "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.93.3"
-    }
-  }
-  </script>
 </head>
 <body>
   <div id="root"></div>
