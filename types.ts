@@ -22,6 +22,10 @@ export interface Product {
   type: 'account' | 'key' | 'service';
 }
 
+export interface CartItem extends Product {
+  quantity: number;
+}
+
 export interface PointShopItem {
   id: string;
   name: string;
