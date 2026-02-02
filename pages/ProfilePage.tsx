@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Wallet, Award, Clock, PlusCircle, CreditCard, Shield, Gift, User, ShoppingBag, Loader2, AlertCircle, CheckCircle2, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { Wallet, Award, Clock, PlusCircle, CreditCard, Shield, Gift, User, ShoppingBag, Loader2, AlertCircle, CheckCircle2, ArrowDownCircle, ArrowUpCircle, X, ChevronRight } from 'lucide-react';
 import { UserProfile, Order } from '../types';
 import { supabase } from '../lib/supabase';
 import { DH_TO_USD, POINTS_PER_DOLLAR, FEE_PERCENTAGE, FLAT_FEE_USD } from '../constants.tsx';
@@ -10,6 +10,7 @@ declare var paypal: any;
 export default function ProfilePage({ user, setUser }: { user: UserProfile, setUser: any }) {
   const [addAmount, setAddAmount] = useState<string>('50');
   const [isDepositing, setIsDepositing] = useState(false);
+  const [showFundingModal, setShowFundingModal] = useState(false);
   const [orders, setOrders] = useState<any[]>([]);
   const [walletHistory, setWalletHistory] = useState<any[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
@@ -24,7 +25,7 @@ export default function ProfilePage({ user, setUser }: { user: UserProfile, setU
   }, [user.id]);
 
   useEffect(() => {
-    if (paypalRef.current && !isDepositing) {
+    if (showFundingModal && paypalRef.current && !isDepositing) {
       // Clear previous buttons
       paypalRef.current.innerHTML = '';
       
@@ -62,7 +63,7 @@ export default function ProfilePage({ user, setUser }: { user: UserProfile, setU
         }
       }).render(paypalRef.current);
     }
-  }, [addAmount, user.id]);
+  }, [addAmount, user.id, showFundingModal, isDepositing]);
 
   const fetchUserOrders = async () => {
     setLoadingOrders(true);
@@ -96,7 +97,6 @@ export default function ProfilePage({ user, setUser }: { user: UserProfile, setU
     setIsDepositing(true);
     setPaymentError(null);
     try {
-      // Points: 1 dollar = 100 points. We calculate based on the added balance.
       const pointsEarned = Math.floor(amountDh * DH_TO_USD * POINTS_PER_DOLLAR);
       
       const { data: updatedProfile, error: profileError } = await supabase
@@ -111,7 +111,6 @@ export default function ProfilePage({ user, setUser }: { user: UserProfile, setU
 
       if (profileError) throw profileError;
 
-      // Log to Wallet History
       await supabase.from('wallet_history').insert({
         user_id: user.id,
         amount: amountDh,
@@ -122,6 +121,7 @@ export default function ProfilePage({ user, setUser }: { user: UserProfile, setU
       setUser(updatedProfile);
       fetchWalletHistory();
       alert(`Success! ${amountDh} DH added to your wallet.`);
+      setShowFundingModal(false);
     } catch (error: any) {
       setPaymentError("Error updating balance: " + error.message);
     } finally {
@@ -172,54 +172,23 @@ export default function ProfilePage({ user, setUser }: { user: UserProfile, setU
                 <div className="text-xl font-black text-indigo-400">{user.discord_points.toLocaleString()}</div>
               </div>
             </div>
+
+            <button 
+              onClick={() => setShowFundingModal(true)}
+              className="w-full mt-8 bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all shadow-xl shadow-blue-600/20 flex items-center justify-center gap-2 group/btn"
+            >
+              <PlusCircle size={16} className="group-hover/btn:rotate-90 transition-transform" /> Add Funds
+            </button>
           </div>
 
-          <div className="glass rounded-[2.5rem] p-8 border border-slate-800 space-y-6">
-            <h3 className="font-black text-lg flex items-center gap-3"><PlusCircle size={20} className="text-blue-400" /> Add Funds</h3>
-            
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-[10px] text-slate-500 font-black uppercase px-2 tracking-widest">Amount to Add (DH)</label>
-                <div className="relative">
-                  <input 
-                    type="number" 
-                    min="10"
-                    placeholder="Min 10 DH" 
-                    className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl py-4 px-4 focus:outline-none focus:border-blue-500 transition-all text-white font-bold"
-                    value={addAmount}
-                    onChange={(e) => setAddAmount(e.target.value)}
-                  />
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 text-xs font-black">DH</div>
-                </div>
-              </div>
-
-              {parseFloat(addAmount) >= 10 ? (
-                <div className="space-y-4 animate-in slide-in-from-top-4">
-                  <div className="p-5 rounded-2xl bg-blue-500/5 border border-blue-500/10 space-y-2">
-                    <div className="flex justify-between text-xs font-bold">
-                      <span className="text-slate-500">Processing Fee</span>
-                      <span className="text-slate-300">{(calculateTotalToPayUsd() - (parseFloat(addAmount) * DH_TO_USD)).toFixed(2)} USD</span>
-                    </div>
-                    <div className="flex justify-between items-center pt-2 border-t border-slate-800">
-                      <span className="text-xs text-white font-black uppercase tracking-widest">Total to Pay</span>
-                      <span className="text-xl font-black text-blue-400">${calculateTotalToPayUsd().toFixed(2)} USD</span>
-                    </div>
-                  </div>
-                  
-                  {paymentError && (
-                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2 font-bold">
-                      <AlertCircle size={14} /> {paymentError}
-                    </div>
-                  )}
-
-                  <div ref={paypalRef} className="z-0"></div>
-                </div>
-              ) : (
-                <div className="p-4 rounded-2xl bg-yellow-500/5 border border-yellow-500/10 text-yellow-500 text-[10px] font-black uppercase tracking-widest text-center">
-                  Minimum deposit is 10 DH
-                </div>
-              )}
+          <div className="glass rounded-[2.5rem] p-8 border border-slate-800 space-y-4 hover:bg-slate-900/40 transition-colors group">
+            <div className="w-14 h-14 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform">
+              <Award size={28} />
             </div>
+            <h4 className="text-xl font-black">Loyalty Rewards</h4>
+            <p className="text-sm text-slate-500 leading-relaxed font-medium">
+              Earn 100 points for every $1 added. Use points in the Point Shop for exclusive perks.
+            </p>
           </div>
         </div>
 
@@ -313,29 +282,95 @@ export default function ProfilePage({ user, setUser }: { user: UserProfile, setU
               )}
             </div>
           </div>
+        </div>
+      </div>
 
-          <div className="grid sm:grid-cols-2 gap-6">
-            <div className="glass p-8 rounded-[2.5rem] border border-slate-800 space-y-4 hover:bg-slate-900/40 transition-colors group">
-              <div className="w-14 h-14 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-400 group-hover:scale-110 transition-transform">
-                <Award size={28} />
-              </div>
-              <h4 className="text-xl font-black">Loyalty Rewards</h4>
-              <p className="text-sm text-slate-500 leading-relaxed font-medium">
-                Earn 100 points for every $1 added. Use points in the Point Shop for exclusive discounts and limited edition keys.
-              </p>
+      {/* Add Funds Modal/Page */}
+      {showFundingModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/90 backdrop-blur-xl animate-in fade-in duration-300" onClick={() => setShowFundingModal(false)}></div>
+          <div className="relative glass w-full max-w-xl rounded-[3rem] border border-slate-700 p-8 md:p-12 space-y-8 animate-in zoom-in-95 duration-300 shadow-2xl">
+            <button 
+              onClick={() => setShowFundingModal(false)}
+              className="absolute top-8 right-8 p-2 rounded-full hover:bg-white/10 text-slate-400 transition-all"
+            >
+              <X size={24} />
+            </button>
+
+            <div className="space-y-2">
+              <h2 className="text-3xl font-black flex items-center gap-3">
+                <Wallet className="text-blue-500" /> Top Up Wallet
+              </h2>
+              <p className="text-slate-500 font-medium">Select the amount you wish to add to your Moon balance.</p>
             </div>
-            <div className="glass p-8 rounded-[2.5rem] border border-slate-800 space-y-4 hover:bg-slate-900/40 transition-colors group">
-              <div className="w-14 h-14 bg-blue-500/10 rounded-2xl flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
-                <Shield size={28} />
+
+            <div className="grid grid-cols-3 gap-3">
+              {['20', '50', '100', '200', '500', '1000'].map(val => (
+                <button 
+                  key={val}
+                  onClick={() => setAddAmount(val)}
+                  className={`py-4 rounded-2xl border text-sm font-black transition-all ${addAmount === val ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'}`}
+                >
+                  {val} DH
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-500 font-black uppercase px-2 tracking-widest">Custom Amount (DH)</label>
+                <div className="relative">
+                  <input 
+                    type="number" 
+                    min="10"
+                    placeholder="Min 10 DH" 
+                    className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-5 px-6 focus:outline-none focus:border-blue-500 transition-all text-white font-black text-xl"
+                    value={addAmount}
+                    onChange={(e) => setAddAmount(e.target.value)}
+                  />
+                  <div className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-500 font-black">DH</div>
+                </div>
               </div>
-              <h4 className="text-xl font-black">Secure Checkout</h4>
-              <p className="text-sm text-slate-500 leading-relaxed font-medium">
-                Payments processed via PayPal's encrypted gateway. Your wallet balance is stored securely and updated instantly.
-              </p>
+
+              {parseFloat(addAmount) >= 10 ? (
+                <div className="space-y-6 animate-in slide-in-from-top-4">
+                  <div className="p-6 rounded-[2rem] bg-slate-900 border border-slate-800 space-y-3">
+                    <div className="flex justify-between items-center text-xs font-bold">
+                      <span className="text-slate-500 uppercase tracking-widest">Balance To Add</span>
+                      <span className="text-white">{parseFloat(addAmount).toFixed(2)} DH</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs font-bold">
+                      <span className="text-slate-500 uppercase tracking-widest">Processing Fee</span>
+                      <span className="text-slate-300">{(calculateTotalToPayUsd() - (parseFloat(addAmount) * DH_TO_USD)).toFixed(2)} USD</span>
+                    </div>
+                    <div className="pt-3 border-t border-slate-800 flex justify-between items-center">
+                      <span className="text-xs text-blue-400 font-black uppercase tracking-widest">Final Total</span>
+                      <span className="text-3xl font-black text-white">${calculateTotalToPayUsd().toFixed(2)} <span className="text-xs text-slate-600">USD</span></span>
+                    </div>
+                  </div>
+                  
+                  {paymentError && (
+                    <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center gap-2 font-bold">
+                      <AlertCircle size={14} /> {paymentError}
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div ref={paypalRef} className="z-0"></div>
+                    <p className="text-center text-[10px] text-slate-600 font-black uppercase tracking-widest flex items-center justify-center gap-2">
+                      <Shield size={12} /> Securely encrypted by PayPal Systems
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-6 rounded-2xl bg-yellow-500/5 border border-yellow-500/10 text-yellow-500 text-xs font-black uppercase tracking-widest text-center flex items-center justify-center gap-2">
+                  <AlertCircle size={16}/> Minimum deposit is 10 DH
+                </div>
+              )}
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

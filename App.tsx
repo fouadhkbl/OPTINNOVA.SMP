@@ -326,88 +326,105 @@ export default function App() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = useCallback(async (userId: string, email: string) => {
+  // Background fetcher for profile details
+  const fetchProfileDetails = useCallback(async (userId: string, email: string) => {
     try {
-      // First, immediately return a skeleton profile to update the UI
-      const skeleton = {
-        id: userId,
-        email: email,
-        username: email.split('@')[0] || 'Member',
-        wallet_balance: 0.00,
-        discord_points: 0,
-        role: 'user'
-      } as UserProfile;
-
-      // Now fetch actual stats in the background
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
       
-      if (profile) {
-        return profile as UserProfile;
-      }
-      
-      return skeleton;
+      if (profile) return profile as UserProfile;
     } catch (e) {
-      return {
-        id: userId,
-        email: email,
-        username: email.split('@')[0] || 'Member',
-        wallet_balance: 0.00,
-        discord_points: 0,
-        role: 'user'
-      } as UserProfile;
+      console.warn("Profile detail fetch failed, using skeleton", e);
     }
+    
+    return {
+      id: userId,
+      email: email,
+      username: email.split('@')[0] || 'Member',
+      wallet_balance: 0.00,
+      discord_points: 0,
+      role: 'user'
+    } as UserProfile;
   }, []);
 
-  // Update logic to be non-blocking
+  // Non-blocking user state updater
   const updateAuthState = useCallback(async (session: any) => {
     if (session) {
       const email = session.user.email || '';
       const userId = session.user.id;
       
-      // Step 1: Set instant partial user so the login button disappears
-      setUser(prev => prev || {
+      // 1. Instantly set skeleton to prevent UI flicker/login button reappearing
+      const skeleton: UserProfile = {
         id: userId,
         email: email,
         username: email.split('@')[0] || 'Member',
         wallet_balance: 0.00,
         discord_points: 0,
         role: 'user'
-      } as UserProfile);
+      };
+      setUser(skeleton);
 
-      // Step 2: Load full database stats in background
-      const fullProfile = await fetchProfile(userId, email);
+      // 2. Fetch rich profile data in the background
+      const fullProfile = await fetchProfileDetails(userId, email);
       setUser(fullProfile);
     } else {
       setUser(null);
     }
-  }, [fetchProfile]);
+  }, [fetchProfileDetails]);
 
   useEffect(() => {
-    const initAuth = async () => {
+    let mounted = true;
+
+    /**
+     * Why this works:
+     * 1. We start checkSession immediately.
+     * 2. Regardless of getSession succeeding/failing/hanging, the finally block ENSURES setLoading(false) runs.
+     * 3. We use a 'mounted' flag to prevent memory leaks and state updates on unmounted components.
+     * 4. onAuthStateChange is our persistent listener for OAuth redirects and token refreshes.
+     */
+    const checkSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        // Set loading to false as soon as we know the session status
-        setLoading(false); 
-        await updateAuthState(session);
+        if (mounted) {
+          if (session) {
+            await updateAuthState(session);
+          }
+        }
       } catch (err) {
-        console.error("Auth init failed", err);
-        setLoading(false);
+        console.error("Auth session check failed", err);
+      } finally {
+        if (mounted) {
+          setLoading(false); // ALWAYS release the loader
+        }
       }
     };
 
-    initAuth();
+    checkSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      await updateAuthState(session);
-      // In case session exists, make sure loading is off
-      if (session) setLoading(false);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (mounted) {
+        await updateAuthState(session);
+        // Safety net: ensure loading is off if an event fires (like OAuth redirect completion)
+        setLoading(false);
+      }
     });
 
-    return () => subscription.unsubscribe();
+    // Fail-safe: even if Supabase completely hangs, we don't want an infinite loader for more than 5 seconds
+    const safetyTimeout = setTimeout(() => {
+      if (mounted && loading) {
+        console.warn("Auth check timed out, releasing loader");
+        setLoading(false);
+      }
+    }, 5000);
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+      clearTimeout(safetyTimeout);
+    };
   }, [updateAuthState]);
 
   if (loading) return (
@@ -415,7 +432,7 @@ export default function App() {
        <div className="relative w-24 h-24">
           <div className="absolute inset-0 border-4 border-blue-500/10 rounded-full"></div>
           <div className="absolute inset-0 border-4 border-blue-500 rounded-full border-t-transparent animate-spin"></div>
-          <img src={LOGO_URL} className="absolute inset-0 w-12 h-12 m-auto opacity-50" />
+          <img src={LOGO_URL} className="absolute inset-0 w-12 h-12 m-auto opacity-50" alt="Loader Logo" />
        </div>
        <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600 animate-pulse">Entering Moon Orbit</span>
     </div>
