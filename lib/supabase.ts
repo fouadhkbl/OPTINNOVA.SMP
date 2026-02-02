@@ -12,8 +12,6 @@ const getEnv = (key: string) => {
 const supabaseUrl = getEnv('VITE_SUPABASE_URL') || 'https://placeholder.supabase.co';
 const supabaseKey = getEnv('VITE_SUPABASE_ANON_KEY') || 'placeholder';
 
-// If credentials are truly missing, createClient would throw without these placeholders.
-// Now it will initialize but queries will fail gracefully.
 export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
     persistSession: true,
@@ -22,6 +20,24 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
     storageKey: 'moon-night-auth-session',
   },
 });
+
+export const logAdminAction = async (
+  action: string,
+  targetId: string,
+  description: string,
+  details: any = {}
+) => {
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  // If no user, we log with a generic admin label or null for public access demo
+  await supabase.from('audit_logs').insert({
+    admin_id: user?.id || null, 
+    action,
+    target_id: targetId,
+    description,
+    details
+  });
+};
 
 export interface SafeQueryResult<T> {
   data: T | null;

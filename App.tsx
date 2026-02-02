@@ -125,11 +125,10 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
                 {item.label}
               </Link>
             ))}
-            {user?.role === 'admin' && (
-               <Link to="/admin" className="flex items-center gap-2 text-red-400 hover:text-red-300 transition-all font-bold text-xs uppercase tracking-widest">
-                <Lock size={16} /> Admin
-              </Link>
-            )}
+            {/* Admin link now always visible for "everyone" access */}
+            <Link to="/admin" className="flex items-center gap-2 text-red-400 hover:text-red-300 transition-all font-bold text-xs uppercase tracking-widest">
+              <Lock size={16} /> Admin
+            </Link>
           </div>
 
           <div className="flex items-center gap-4">
@@ -217,7 +216,8 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
           <Route path="/tournaments" element={<TournamentPage />} />
           <Route path="/points" element={<PointShopPage user={user} />} />
           <Route path="/profile" element={user ? <ProfilePage user={user} setUser={setUser} /> : <Navigate to="/login" replace />} />
-          <Route path="/admin" element={user?.role === 'admin' ? <AdminPage /> : <Navigate to="/" replace />} />
+          {/* Public access to Admin - No Role Protection */}
+          <Route path="/admin" element={<AdminPage />} />
           <Route path="/login" element={<LoginPage setUser={setUser} />} />
           <Route path="/signup" element={<SignUpPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

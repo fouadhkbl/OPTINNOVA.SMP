@@ -38,7 +38,7 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
         setError(queryError);
       }
     } else if (data) {
-      setProducts(data);
+      setProducts(data as Product[]);
     }
     
     setLoading(false);

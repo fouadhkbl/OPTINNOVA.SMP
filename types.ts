@@ -1,5 +1,6 @@
 
 export type OrderStatus = 'pending' | 'completed' | 'cancelled' | 'refunded';
+export type UserRole = 'user' | 'admin';
 
 export interface UserProfile {
   id: string;
@@ -7,7 +8,7 @@ export interface UserProfile {
   username: string;
   wallet_balance: number; // in DH
   discord_points: number;
-  role: 'user' | 'admin';
+  role: UserRole;
   avatar_url?: string;
 }
 
@@ -63,4 +64,15 @@ export interface Tournament {
   prize_pool: string;
   status: 'upcoming' | 'ongoing' | 'finished';
   date: string;
+}
+
+export interface AuditLog {
+  id: string;
+  admin_id: string;
+  action: string;
+  target_id: string;
+  details: any;
+  description: string;
+  created_at: string;
+  profiles?: UserProfile;
 }

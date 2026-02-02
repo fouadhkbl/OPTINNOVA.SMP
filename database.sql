@@ -1,79 +1,71 @@
+-- Moon Night Digital Shop - Complete Database Schema
 
--- MOON NIGHT DIGITAL SHOP - PRODUCTION DATABASE SCHEMA
-
--- 1. Create custom types
-DO $$ 
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status') THEN
-        CREATE TYPE order_status AS ENUM ('pending', 'completed', 'cancelled', 'refunded');
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
-        CREATE TYPE user_role AS ENUM ('user', 'admin');
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'product_type') THEN
-        CREATE TYPE product_type AS ENUM ('account', 'key', 'service');
-    END IF;
-END $$;
-
--- 2. Profiles Table
+-- 1. Profiles (Users)
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
-    email TEXT UNIQUE NOT NULL,
-    username TEXT,
-    wallet_balance NUMERIC(12, 2) DEFAULT 0.00,
-    discord_points BIGINT DEFAULT 0,
-    role user_role DEFAULT 'user',
+    username TEXT UNIQUE,
+    email TEXT UNIQUE,
+    full_name TEXT,
     avatar_url TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+    wallet_balance DECIMAL(12,2) DEFAULT 0.00,
+    discord_points BIGINT DEFAULT 0,
+    role TEXT DEFAULT 'user' CHECK (role IN ('user', 'admin')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 3. Products Table
+-- 2. Products
 CREATE TABLE IF NOT EXISTS public.products (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT,
-    secret_content TEXT, -- Sensitive content (keys/accounts)
-    price_dh NUMERIC(12, 2) NOT NULL,
+    price_dh DECIMAL(12,2) NOT NULL,
     category TEXT NOT NULL,
     stock INTEGER DEFAULT 0,
     image_url TEXT,
-    type product_type DEFAULT 'key',
+    type TEXT DEFAULT 'key' CHECK (type IN ('account', 'key', 'service')),
+    secret_content TEXT, -- The actual digital item (key/acc info)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 4. Orders Table
+-- Schema Migration Fixes: Ensure columns exist if table was already created
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS secret_content TEXT;
+ALTER TABLE public.products ADD COLUMN IF NOT EXISTS type TEXT DEFAULT 'key' CHECK (type IN ('account', 'key', 'service'));
+
+-- 3. Orders
 CREATE TABLE IF NOT EXISTS public.orders (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id UUID REFERENCES public.profiles(id) NOT NULL,
-    product_id UUID REFERENCES public.products(id) NOT NULL,
-    status order_status DEFAULT 'completed',
-    price_paid NUMERIC(12, 2) NOT NULL,
+    user_id UUID REFERENCES public.profiles(id),
+    product_id UUID REFERENCES public.products(id),
+    status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'cancelled', 'refunded')),
+    price_paid DECIMAL(12,2) NOT NULL,
     points_earned INTEGER DEFAULT 0,
-    delivery_data TEXT,
+    delivery_data TEXT, -- Copy of product.secret_content at time of purchase
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 5. Messages Table
+-- Schema Migration Fixes
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS delivery_data TEXT;
+
+-- 4. Messages (Order Support)
 CREATE TABLE IF NOT EXISTS public.messages (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    order_id UUID REFERENCES public.orders(id) ON DELETE CASCADE NOT NULL,
-    sender_id UUID REFERENCES public.profiles(id) NOT NULL,
+    order_id UUID REFERENCES public.orders(id) ON DELETE CASCADE,
+    sender_id UUID REFERENCES public.profiles(id),
     content TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 6. Wallet History Table
+-- 5. Wallet History
 CREATE TABLE IF NOT EXISTS public.wallet_history (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id UUID REFERENCES public.profiles(id) NOT NULL,
-    amount NUMERIC(12, 2) NOT NULL,
-    type TEXT NOT NULL, -- 'deposit', 'purchase', 'refund', 'redemption'
+    user_id UUID REFERENCES public.profiles(id),
+    amount DECIMAL(12,2) NOT NULL,
+    type TEXT NOT NULL, -- 'deposit', 'purchase', 'refund'
     description TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 7. Point Shop Items Table
+-- 6. Point Shop Items
 CREATE TABLE IF NOT EXISTS public.point_shop_items (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     name TEXT NOT NULL,
@@ -83,131 +75,124 @@ CREATE TABLE IF NOT EXISTS public.point_shop_items (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- ==========================================
--- SECURE CHECKOUT RPC (BACKEND LOGIC)
--- ==========================================
-CREATE OR REPLACE FUNCTION process_checkout(cart_items JSONB)
+-- 7. Tournaments
+CREATE TABLE IF NOT EXISTS public.tournaments (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    role_required TEXT DEFAULT 'Silver Member',
+    prize_pool TEXT DEFAULT '1000 DH',
+    status TEXT DEFAULT 'upcoming' CHECK (status IN ('upcoming', 'ongoing', 'finished')),
+    tournament_date TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now() + interval '7 days')
+);
+
+-- 8. Audit Logs
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    admin_id UUID REFERENCES public.profiles(id),
+    action TEXT NOT NULL,
+    target_id TEXT,
+    details JSONB,
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- RLS (Row Level Security) - Set to PERMISSIVE for easy access as requested
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public Profiles access" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public Products access" ON public.products FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public Orders access" ON public.orders FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public Messages access" ON public.messages FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.wallet_history ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public History access" ON public.wallet_history FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.point_shop_items ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public PointShop access" ON public.point_shop_items FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.tournaments ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public Tournaments access" ON public.tournaments FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Public Audit access" ON public.audit_logs FOR ALL USING (true) WITH CHECK (true);
+
+-- 9. Transactional Checkout Function (PL/pgSQL)
+CREATE OR REPLACE FUNCTION public.process_checkout(cart_items JSONB)
 RETURNS JSONB
 LANGUAGE plpgsql
-SECURITY DEFINER -- Runs with elevated privileges, but we verify user_id
-SET search_path = public
+SECURITY DEFINER
 AS $$
 DECLARE
     item RECORD;
-    prod_record RECORD;
-    total_cost NUMERIC := 0;
+    current_product RECORD;
+    total_cost DECIMAL(12,2) := 0;
     total_points INTEGER := 0;
-    current_balance NUMERIC;
-    user_id UUID := auth.uid();
-    new_balance NUMERIC;
+    user_balance DECIMAL(12,2);
+    caller_id UUID;
 BEGIN
-    -- 1. Basic Auth Check
-    IF user_id IS NULL THEN
-        RAISE EXCEPTION 'Authentication required';
+    caller_id := auth.uid();
+    IF caller_id IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Unauthorized purchase attempt.');
     END IF;
 
-    -- 2. Lock User Profile to prevent concurrent balance manipulation
-    SELECT wallet_balance INTO current_balance 
-    FROM profiles WHERE id = user_id FOR UPDATE;
-
-    -- 3. Calculate server-side totals and validate stock
+    -- Calculate total cost and check availability
     FOR item IN SELECT * FROM jsonb_to_recordset(cart_items) AS x(id UUID, quantity INTEGER)
     LOOP
-        -- Lock product row to prevent stock race conditions
-        SELECT price_dh, stock, secret_content, name INTO prod_record
-        FROM products WHERE id = item.id FOR UPDATE;
-
+        SELECT * INTO current_product FROM products WHERE id = item.id;
         IF NOT FOUND THEN
-            RAISE EXCEPTION 'Product % not found', item.id;
+            RETURN jsonb_build_object('success', false, 'message', 'Product not found.');
         END IF;
-
-        IF prod_record.stock < item.quantity THEN
-            RAISE EXCEPTION 'Insufficient stock for %', prod_record.name;
+        IF current_product.stock < item.quantity THEN
+            RETURN jsonb_build_object('success', false, 'message', 'Insufficient stock for ' || current_product.name);
         END IF;
-
-        total_cost := total_cost + (prod_record.price_dh * item.quantity);
-        total_points := total_points + floor(prod_record.price_dh * item.quantity * 10);
+        total_cost := total_cost + (current_product.price_dh * item.quantity);
+        total_points := total_points + FLOOR(current_product.price_dh * 10); -- 10 points per 1 DH
     END LOOP;
 
-    -- 4. Verify Funds
-    IF current_balance < total_cost THEN
-        RAISE EXCEPTION 'Insufficient balance. Need: %, Have: %', total_cost, current_balance;
+    -- Check user balance
+    SELECT wallet_balance INTO user_balance FROM profiles WHERE id = caller_id;
+    IF user_balance < total_cost THEN
+        RETURN jsonb_build_object('success', false, 'message', 'Insufficient wallet balance.');
     END IF;
 
-    -- 5. Deduct Balance & Award Points
-    UPDATE profiles 
-    SET wallet_balance = wallet_balance - total_cost,
+    -- Deduct funds, update points, decrease stock, create orders
+    UPDATE profiles SET 
+        wallet_balance = wallet_balance - total_cost,
         discord_points = discord_points + total_points
-    WHERE id = user_id
-    RETURNING wallet_balance INTO new_balance;
+    WHERE id = caller_id;
 
-    -- 6. Record Wallet History
-    INSERT INTO wallet_history (user_id, amount, type, description)
-    VALUES (user_id, -total_cost, 'purchase', 'Shop Checkout');
-
-    -- 7. Create Orders and Update Stock
     FOR item IN SELECT * FROM jsonb_to_recordset(cart_items) AS x(id UUID, quantity INTEGER)
     LOOP
-        SELECT price_dh, secret_content INTO prod_record FROM products WHERE id = item.id;
-
-        INSERT INTO orders (user_id, product_id, price_paid, points_earned, status, delivery_data)
-        VALUES (user_id, item.id, (prod_record.price_dh * item.quantity), floor(prod_record.price_dh * item.quantity * 10), 'completed', COALESCE(prod_record.secret_content, 'Instant Delivery'));
-
-        UPDATE products 
-        SET stock = stock - item.quantity 
-        WHERE id = item.id;
+        SELECT * INTO current_product FROM products WHERE id = item.id;
+        
+        UPDATE products SET stock = stock - item.quantity WHERE id = item.id;
+        
+        -- Create orders (one per quantity for unique items if needed, or simple)
+        INSERT INTO orders (user_id, product_id, status, price_paid, points_earned, delivery_data)
+        VALUES (caller_id, current_product.id, 'completed', current_product.price_dh, FLOOR(current_product.price_dh * 10), current_product.secret_content);
     END LOOP;
 
-    RETURN jsonb_build_object(
-        'success', true,
-        'new_balance', new_balance,
-        'points_earned', total_points
-    );
+    -- Record wallet history
+    INSERT INTO wallet_history (user_id, amount, type, description)
+    VALUES (caller_id, -total_cost, 'purchase', 'Purchase of digital items');
+
+    RETURN jsonb_build_object('success', true, 'new_balance', user_balance - total_cost, 'points_earned', total_points);
 END;
 $$;
 
--- ==========================================
--- HARDENED RLS POLICIES
--- ==========================================
+-- Seed Data (Optional)
+INSERT INTO public.products (name, description, price_dh, category, stock, type, secret_content) VALUES 
+('Elite Valorant Account', 'Level 100+, multiple rare skins.', 250.00, 'Accounts', 5, 'account', 'VAL-ACC-XYZ-123'),
+('Windows 11 Pro Key', 'Genuine OEM activation key.', 45.00, 'Keys', 50, 'key', 'WIN11-PRO-ABCD-EFGH'),
+('Netlfix Premium 1M', 'Shared private profile.', 15.00, 'Services', 10, 'service', 'NETFLIX-LOGIN-MoonNight');
 
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.wallet_history ENABLE ROW LEVEL SECURITY;
-
--- Deny All by default
-DROP POLICY IF EXISTS "Enable all access for admins" ON public.products;
-CREATE POLICY "Admins full access" ON public.products FOR ALL TO authenticated 
-USING (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
-
--- PRODUCTS: Everyone can see basic info, but hide secret_content
--- Note: In a real production app, you might use a view to hide secret_content
-CREATE POLICY "Products viewable by all" ON public.products FOR SELECT USING (true);
-
--- ORDERS: Strictly private or Admin
-CREATE POLICY "Orders are private" ON public.orders FOR SELECT TO authenticated 
-USING (auth.uid() = user_id OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
-
--- WALLET: Strictly private
-CREATE POLICY "Wallet history is private" ON public.wallet_history FOR SELECT TO authenticated 
-USING (auth.uid() = user_id);
-
--- PROFILES: Users see themselves, Admins see all
-CREATE POLICY "Profiles privacy" ON public.profiles FOR SELECT TO authenticated 
-USING (auth.uid() = id OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'));
-
-CREATE POLICY "Users update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
-
--- MESSAGES: Linked to orders
-CREATE POLICY "Messages visibility" ON public.messages FOR SELECT TO authenticated 
-USING (
-    EXISTS (SELECT 1 FROM orders WHERE id = order_id AND user_id = auth.uid()) 
-    OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
-);
-
-CREATE POLICY "Messages insert" ON public.messages FOR INSERT TO authenticated 
-WITH CHECK (
-    EXISTS (SELECT 1 FROM orders WHERE id = order_id AND user_id = auth.uid()) 
-    OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
-);
+INSERT INTO public.point_shop_items (name, description, cost_points) VALUES 
+('Silver Member Role', 'Discord role + 5% discount.', 1000),
+('Gold Member Role', 'Discord role + 10% discount.', 2500),
+('Free 10 DH Key', 'Redeem for 10 DH wallet credit.', 5000);
