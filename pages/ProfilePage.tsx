@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Wallet, Award, Clock, PlusCircle, CreditCard, Shield, Gift, User, ShoppingBag, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Wallet, Award, Clock, PlusCircle, CreditCard, Shield, Gift, User, ShoppingBag, Loader2, AlertCircle, CheckCircle2, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
 import { UserProfile, Order } from '../types';
 import { supabase } from '../lib/supabase';
 import { DH_TO_USD, POINTS_PER_DOLLAR, FEE_PERCENTAGE, FLAT_FEE_USD } from '../constants.tsx';
@@ -11,12 +11,16 @@ export default function ProfilePage({ user, setUser }: { user: UserProfile, setU
   const [addAmount, setAddAmount] = useState<string>('50');
   const [isDepositing, setIsDepositing] = useState(false);
   const [orders, setOrders] = useState<any[]>([]);
+  const [walletHistory, setWalletHistory] = useState<any[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
+  const [loadingHistory, setLoadingHistory] = useState(true);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'orders' | 'history'>('orders');
   const paypalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchUserOrders();
+    fetchWalletHistory();
   }, [user.id]);
 
   useEffect(() => {
@@ -74,6 +78,20 @@ export default function ProfilePage({ user, setUser }: { user: UserProfile, setU
     setLoadingOrders(false);
   };
 
+  const fetchWalletHistory = async () => {
+    setLoadingHistory(true);
+    const { data, error } = await supabase
+      .from('wallet_history')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    
+    if (!error && data) {
+      setWalletHistory(data);
+    }
+    setLoadingHistory(false);
+  };
+
   const handlePaymentSuccess = async (amountDh: number, transactionId: string) => {
     setIsDepositing(true);
     setPaymentError(null);
@@ -85,7 +103,7 @@ export default function ProfilePage({ user, setUser }: { user: UserProfile, setU
         .from('profiles')
         .update({ 
           wallet_balance: user.wallet_balance + amountDh,
-          discord_points: user.discord_points + pointsEarned
+          discord_points: Number(user.discord_points) + pointsEarned
         })
         .eq('id', user.id)
         .select()
@@ -102,6 +120,7 @@ export default function ProfilePage({ user, setUser }: { user: UserProfile, setU
       });
 
       setUser(updatedProfile);
+      fetchWalletHistory();
       alert(`Success! ${amountDh} DH added to your wallet.`);
     } catch (error: any) {
       setPaymentError("Error updating balance: " + error.message);
@@ -207,51 +226,90 @@ export default function ProfilePage({ user, setUser }: { user: UserProfile, setU
         {/* Right: History & Orders */}
         <div className="md:col-span-2 space-y-8">
           <div className="glass rounded-[2.5rem] p-8 border border-slate-800">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-2xl font-black flex items-center gap-3">
-                <ShoppingBag className="text-blue-400" /> Recent Orders
-              </h3>
+            <div className="flex flex-col sm:flex-row items-center justify-between mb-8 gap-6">
+              <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
+                <button 
+                  onClick={() => setActiveTab('orders')}
+                  className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'orders' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  Orders
+                </button>
+                <button 
+                  onClick={() => setActiveTab('history')}
+                  className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'history' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}
+                >
+                  Wallet History
+                </button>
+              </div>
               <div className="bg-slate-900 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest text-slate-500 border border-slate-800">
-                {orders.length} Completed
+                {activeTab === 'orders' ? orders.length : walletHistory.length} Activities
               </div>
             </div>
 
             <div className="space-y-4">
-              {loadingOrders ? (
-                <div className="flex justify-center py-12"><Loader2 className="animate-spin text-blue-500" size={32} /></div>
-              ) : orders.length === 0 ? (
-                <div className="text-center py-20 bg-slate-900/20 rounded-[2rem] border border-dashed border-slate-800 space-y-4">
-                  <ShoppingBag size={48} className="mx-auto text-slate-700" />
-                  <p className="text-slate-500 font-medium italic">You haven't placed any orders yet.</p>
-                </div>
-              ) : (
-                orders.map(order => (
-                  <div key={order.id} className="p-6 rounded-3xl bg-slate-900/30 border border-slate-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group hover:bg-slate-900/50 hover:border-blue-500/30 transition-all">
-                    <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
-                        <Gift size={28} />
+              {activeTab === 'orders' ? (
+                loadingOrders ? (
+                  <div className="flex justify-center py-12"><Loader2 className="animate-spin text-blue-500" size={32} /></div>
+                ) : orders.length === 0 ? (
+                  <div className="text-center py-20 bg-slate-900/20 rounded-[2rem] border border-dashed border-slate-800 space-y-4">
+                    <ShoppingBag size={48} className="mx-auto text-slate-700" />
+                    <p className="text-slate-500 font-medium italic">You haven't placed any orders yet.</p>
+                  </div>
+                ) : (
+                  orders.map(order => (
+                    <div key={order.id} className="p-6 rounded-3xl bg-slate-900/30 border border-slate-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 group hover:bg-slate-900/50 hover:border-blue-500/30 transition-all">
+                      <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
+                          <Gift size={28} />
+                        </div>
+                        <div className="space-y-1">
+                          <h4 className="font-bold text-slate-200 text-lg">{order.products?.name || 'Digital Item'}</h4>
+                          <div className="flex items-center gap-3">
+                             <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">{new Date(order.created_at).toLocaleDateString()}</span>
+                             <span className="w-1 h-1 rounded-full bg-slate-700"></span>
+                             <span className="text-[10px] text-slate-600 font-mono">#{order.id.split('-')[0].toUpperCase()}</span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="space-y-1">
-                        <h4 className="font-bold text-slate-200 text-lg">{order.products?.name || 'Digital Item'}</h4>
-                        <div className="flex items-center gap-3">
-                           <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">{new Date(order.created_at).toLocaleDateString()}</span>
-                           <span className="w-1 h-1 rounded-full bg-slate-700"></span>
-                           <span className="text-[10px] text-slate-600 font-mono">#{order.id.split('-')[0].toUpperCase()}</span>
+                      
+                      <div className="flex items-center gap-6">
+                        <div className="text-right">
+                          <div className="font-black text-white text-lg">{order.price_paid} DH</div>
+                          <div className="text-[10px] text-indigo-400 font-black uppercase tracking-widest">+{order.points_earned} PTS</div>
+                        </div>
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-green-500/10 text-green-400 text-[10px] font-black uppercase tracking-widest border border-green-500/20">
+                          <CheckCircle2 size={12} /> {order.status}
                         </div>
                       </div>
                     </div>
-                    
-                    <div className="flex items-center gap-6">
-                      <div className="text-right">
-                        <div className="font-black text-white text-lg">{order.price_paid} DH</div>
-                        <div className="text-[10px] text-indigo-400 font-black uppercase tracking-widest">+{order.points_earned} PTS</div>
+                  ))
+                )
+              ) : (
+                loadingHistory ? (
+                  <div className="flex justify-center py-12"><Loader2 className="animate-spin text-blue-500" size={32} /></div>
+                ) : walletHistory.length === 0 ? (
+                  <div className="text-center py-20 bg-slate-900/20 rounded-[2rem] border border-dashed border-slate-800 space-y-4">
+                    <Wallet size={48} className="mx-auto text-slate-700" />
+                    <p className="text-slate-500 font-medium italic">No wallet history found.</p>
+                  </div>
+                ) : (
+                  walletHistory.map(entry => (
+                    <div key={entry.id} className="p-6 rounded-3xl bg-slate-900/30 border border-slate-800/50 flex items-center justify-between gap-4 group hover:bg-slate-900/50 hover:border-blue-500/30 transition-all">
+                      <div className="flex items-center gap-4">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${entry.amount > 0 ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                          {entry.amount > 0 ? <ArrowUpCircle size={24}/> : <ArrowDownCircle size={24}/>}
+                        </div>
+                        <div>
+                          <div className="font-bold text-slate-200 text-sm">{entry.description || entry.type.toUpperCase()}</div>
+                          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{new Date(entry.created_at).toLocaleString()}</div>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-green-500/10 text-green-400 text-[10px] font-black uppercase tracking-widest border border-green-500/20">
-                        <CheckCircle2 size={12} /> {order.status}
+                      <div className={`text-lg font-black ${entry.amount > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {entry.amount > 0 ? '+' : ''}{entry.amount.toFixed(2)} DH
                       </div>
                     </div>
-                  </div>
-                ))
+                  ))
+                )
               )}
             </div>
           </div>

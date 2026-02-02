@@ -34,6 +34,7 @@ import ProfilePage from './pages/ProfilePage';
 import AdminPage from './pages/AdminPage';
 import PointShopPage from './pages/PointShopPage';
 import LoginPage from './pages/LoginPage';
+import SignUpPage from './pages/SignUpPage';
 
 const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, setUser: any, cart: CartItem[], setCart: any }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -116,6 +117,14 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
         .single();
 
       if (profileError) throw profileError;
+
+      // 4. Log to Wallet History
+      await supabase.from('wallet_history').insert({
+        user_id: user.id,
+        amount: -cartTotal,
+        type: 'purchase',
+        description: `Order Purchase: ${cart.map(i => i.name).join(', ')}`
+      });
 
       setUser(updatedProfile);
       setCart([]);
@@ -299,6 +308,7 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
           <Route path="/profile" element={user ? <ProfilePage user={user} setUser={setUser} /> : <Navigate to="/login" />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/login" element={<LoginPage setUser={setUser} />} />
+          <Route path="/signup" element={<SignUpPage />} />
         </Routes>
       </main>
 

@@ -1,26 +1,42 @@
 
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Chrome, MessageSquare, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Mail, Chrome, MessageSquare, ArrowRight, ShieldCheck, User } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { LOGO_URL } from '../constants.tsx';
 
-export default function LoginPage({ setUser }: { setUser: any }) {
+export default function SignUpPage() {
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    // Pass the username in user_metadata so the Supabase trigger captures it correctly
+    const { data, error } = await supabase.auth.signUp({ 
+      email, 
+      password,
+      options: {
+        data: {
+          username: username,
+        }
+      }
+    });
     
     if (error) {
       alert(error.message);
     } else if (data.user) {
-      navigate('/');
+      if (data.session) {
+        alert("Account created successfully!");
+        navigate('/');
+      } else {
+        alert("Account created! Please check your email for a verification link.");
+        navigate('/login');
+      }
     }
     setLoading(false);
   };
@@ -42,8 +58,8 @@ export default function LoginPage({ setUser }: { setUser: any }) {
           <div className="absolute inset-0 bg-blue-600 blur-2xl opacity-20 animate-pulse"></div>
           <img src={LOGO_URL} alt="Logo" className="relative w-full h-full rounded-full bg-slate-900 border border-slate-800 shadow-2xl object-contain" />
         </div>
-        <h1 className="text-3xl font-black tracking-tight">Access <span className="gradient-text">Moon Night</span></h1>
-        <p className="text-slate-500 font-medium">Log in to start your digital journey.</p>
+        <h1 className="text-3xl font-black tracking-tight">Join <span className="gradient-text">Moon Night</span></h1>
+        <p className="text-slate-500 font-medium">Create your elite digital identity today.</p>
       </div>
 
       <div className="glass rounded-[2.5rem] p-8 md:p-10 border border-slate-800 space-y-8">
@@ -54,7 +70,7 @@ export default function LoginPage({ setUser }: { setUser: any }) {
           >
             <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
             <MessageSquare size={20} className="relative" /> 
-            <span className="relative">Login with Discord</span>
+            <span className="relative">Join with Discord</span>
           </button>
           <button 
             onClick={() => handleSocialLogin('google')} 
@@ -62,7 +78,7 @@ export default function LoginPage({ setUser }: { setUser: any }) {
           >
             <div className="absolute inset-0 bg-black/5 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
             <Chrome size={20} className="relative text-red-500" /> 
-            <span className="relative">Login with Google</span>
+            <span className="relative">Join with Google</span>
           </button>
         </div>
 
@@ -71,11 +87,26 @@ export default function LoginPage({ setUser }: { setUser: any }) {
             <div className="w-full border-t border-slate-800"></div>
           </div>
           <div className="relative flex justify-center text-[10px] font-black uppercase tracking-[0.2em]">
-            <span className="bg-[#020617] px-4 text-slate-600">Email & Password</span>
+            <span className="bg-[#020617] px-4 text-slate-600">Register with Email</span>
           </div>
         </div>
 
-        <form onSubmit={handleEmailLogin} className="space-y-4">
+        <form onSubmit={handleSignUp} className="space-y-4">
+          <div className="space-y-1">
+            <label className="text-[10px] text-slate-500 font-black uppercase px-2 tracking-widest">Username</label>
+            <div className="relative group">
+              <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600 group-focus-within:text-blue-500 transition-colors" size={18} />
+              <input 
+                required
+                type="text" 
+                placeholder="How shall we call you?" 
+                className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:border-blue-500/50 transition-all text-white font-medium"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </div>
+          </div>
+          
           <div className="space-y-1">
             <label className="text-[10px] text-slate-500 font-black uppercase px-2 tracking-widest">Email</label>
             <div className="relative group">
@@ -90,6 +121,7 @@ export default function LoginPage({ setUser }: { setUser: any }) {
               />
             </div>
           </div>
+
           <div className="space-y-1">
             <label className="text-[10px] text-slate-500 font-black uppercase px-2 tracking-widest">Password</label>
             <div className="relative group">
@@ -97,27 +129,28 @@ export default function LoginPage({ setUser }: { setUser: any }) {
               <input 
                 required
                 type="password" 
-                placeholder="••••••••" 
+                placeholder="Min 6 characters" 
                 className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:border-blue-500/50 transition-all text-white font-medium"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
           </div>
+
           <button 
             type="submit"
             disabled={loading}
             className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-2xl font-black transition-all shadow-xl shadow-blue-600/30 flex items-center justify-center gap-2 group"
           >
-            {loading ? 'Authenticating...' : 'Sign In'} <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+            {loading ? 'Creating Account...' : 'Create Account'} <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
           </button>
         </form>
 
         <div className="text-center pt-2">
           <p className="text-sm text-slate-500 font-medium">
-            Don't have an account?{' '}
-            <Link to="/signup" className="text-blue-400 font-black hover:text-blue-300 transition-colors">
-              Sign Up Now
+            Already have an account?{' '}
+            <Link to="/login" className="text-blue-400 font-black hover:text-blue-300 transition-colors">
+              Log In
             </Link>
           </p>
         </div>
@@ -125,7 +158,7 @@ export default function LoginPage({ setUser }: { setUser: any }) {
 
       <div className="text-center">
         <p className="text-slate-600 text-sm font-medium">
-          Trusted by 7,000+ Discord members.
+          The moon is rising. Welcome to the elite.
         </p>
       </div>
     </div>

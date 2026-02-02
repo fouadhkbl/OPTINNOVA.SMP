@@ -1,5 +1,5 @@
 
--- MOON NIGHT DIGITAL SHOP - DATABASE SCHEMA (FINAL VERSION)
+-- MOON NIGHT DIGITAL SHOP - DATABASE SCHEMA (COMPLETE)
 
 -- 1. Create custom types
 DO $$ 
@@ -54,23 +54,64 @@ CREATE TABLE IF NOT EXISTS public.orders (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 5. Enable RLS
+-- 5. Wallet History Table
+CREATE TABLE IF NOT EXISTS public.wallet_history (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID REFERENCES public.profiles(id) NOT NULL,
+    amount NUMERIC(12, 2) NOT NULL,
+    type TEXT NOT NULL, -- 'deposit', 'purchase', 'refund', 'redemption'
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- 6. Point Shop Items Table
+CREATE TABLE IF NOT EXISTS public.point_shop_items (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    cost_points INTEGER NOT NULL,
+    image_url TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- 7. Tournaments Table
+CREATE TABLE IF NOT EXISTS public.tournaments (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    role_required TEXT,
+    prize_pool TEXT,
+    status TEXT CHECK (status IN ('upcoming', 'ongoing', 'finished')) DEFAULT 'upcoming',
+    tournament_date TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- 8. Enable RLS
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wallet_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.point_shop_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tournaments ENABLE ROW LEVEL SECURITY;
 
--- 6. Cleanup and Create Policies
+-- 9. Cleanup and Create Policies
 DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON public.profiles;
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Products are viewable by everyone" ON public.products;
 DROP POLICY IF EXISTS "Orders are viewable by owner" ON public.orders;
+DROP POLICY IF EXISTS "History viewable by owner" ON public.wallet_history;
+DROP POLICY IF EXISTS "Points shop items viewable by everyone" ON public.point_shop_items;
+DROP POLICY IF EXISTS "Tournaments viewable by everyone" ON public.tournaments;
 
 CREATE POLICY "Public profiles are viewable by everyone" ON public.profiles FOR SELECT USING (true);
 CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
 CREATE POLICY "Products are viewable by everyone" ON public.products FOR SELECT USING (true);
 CREATE POLICY "Orders are viewable by owner" ON public.orders FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "History viewable by owner" ON public.wallet_history FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Points shop items viewable by everyone" ON public.point_shop_items FOR SELECT USING (true);
+CREATE POLICY "Tournaments viewable by everyone" ON public.tournaments FOR SELECT USING (true);
 
--- 7. Automatic Profile Creation Trigger
+-- 10. Automatic Profile Creation Trigger
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
