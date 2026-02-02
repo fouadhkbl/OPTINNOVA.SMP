@@ -40,13 +40,21 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    navigate('/login');
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await supabase.auth.signOut();
+      // Hard reload to clear all memory-resident state (cart, user, etc.)
+      window.location.href = window.location.origin + window.location.pathname;
+    } catch (e) {
+      console.error("Logout failed", e);
+      setIsLoggingOut(false);
+    }
   };
 
   const navItems = [
@@ -186,8 +194,8 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
                     {user.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" /> : <User size={16} />}
                   </div>
                 </Link>
-                <button onClick={handleLogout} title="Log Out" className="text-slate-500 hover:text-red-400 transition-colors">
-                  <LogOut size={20} />
+                <button onClick={handleLogout} disabled={isLoggingOut} title="Log Out" className="text-slate-500 hover:text-red-400 transition-colors">
+                  {isLoggingOut ? <Loader2 size={20} className="animate-spin" /> : <LogOut size={20} />}
                 </button>
               </div>
             ) : (
@@ -328,7 +336,7 @@ export default function App() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfileDetails = useCallback(async (userId: string, email: string) => {
+  const fetchProfileDetails = useCallback(async (userId: string) => {
     try {
       const { data: profile, error } = await supabase
         .from('profiles')
@@ -338,9 +346,8 @@ export default function App() {
       
       if (profile) return profile as UserProfile;
     } catch (e: any) {
-      console.warn("Profile detail fetch failed. This is expected for brand new users until trigger completes.", e.message);
+      console.warn("Profile detail sync deferred...", e.message);
     }
-    
     return null;
   }, []);
 
@@ -353,7 +360,7 @@ export default function App() {
       const avatarUrl = meta.avatar_url || meta.picture || meta.avatar;
       const displayName = meta.full_name || meta.name || meta.username || meta.preferred_username || email.split('@')[0];
       
-      const skeleton: UserProfile = {
+      const identity: UserProfile = {
         id: userId,
         email: email,
         username: displayName,
@@ -363,15 +370,14 @@ export default function App() {
         avatar_url: avatarUrl
       };
       
-      // Step 1: Initial UI update
-      setUser(skeleton);
+      // Immediate render of identity
+      setUser(identity);
 
-      // Step 2: Background sync
-      const fullProfile = await fetchProfileDetails(userId, email);
-      
+      // Deep sync of wallet/points in background
+      const fullProfile = await fetchProfileDetails(userId);
       if (fullProfile) {
         setUser(prev => ({ 
-          ...skeleton, 
+          ...identity, 
           ...fullProfile, 
           avatar_url: avatarUrl || fullProfile.avatar_url 
         }));
@@ -386,39 +392,26 @@ export default function App() {
 
     const initialize = async () => {
       try {
-        // RESILIENCE: Wait briefly for Supabase to parse OAuth tokens from hash if present
-        if (window.location.hash.includes('access_token=')) {
-          await new Promise(r => setTimeout(r, 800));
-        }
-
         const { data: { session } } = await supabase.auth.getSession();
-        if (mounted) {
-          if (session) {
-            await updateAuthState(session);
-          }
+        if (mounted && session) {
+          await updateAuthState(session);
         }
       } catch (err) {
-        console.error("Initialization error:", err);
+        console.error("Init Error", err);
       } finally {
-        if (mounted) {
-          setLoading(false);
-        }
+        if (mounted) setLoading(false);
       }
     };
 
     initialize();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (mounted) {
-        if (session) {
-          await updateAuthState(session);
-        } else {
-          setUser(null);
-        }
-        
-        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-           setLoading(false);
-        }
+      if (!mounted) return;
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        await updateAuthState(session);
+        setLoading(false);
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
       }
     });
 
@@ -441,12 +434,6 @@ export default function App() {
             <div className="h-full bg-blue-500 animate-[loading_2s_ease-in-out_infinite]"></div>
          </div>
        </div>
-       <style>{`
-         @keyframes loading {
-           0% { transform: translateX(-100%); }
-           100% { transform: translateX(100%); }
-         }
-       `}</style>
     </div>
   );
 

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Chrome, MessageSquare, ArrowRight, ShieldCheck, AlertCircle, RefreshCw } from 'lucide-react';
+import { Mail, Chrome, MessageSquare, ArrowRight, ShieldCheck, AlertCircle, RefreshCw, Loader2 } from 'lucide-react';
 import { supabase, testSupabaseConnection } from '../lib/supabase';
 import { LOGO_URL } from '../constants.tsx';
 
@@ -17,15 +17,16 @@ export default function LoginPage({ setUser }: { setUser: any }) {
     setDiagLoading(true);
     const result = await testSupabaseConnection();
     if (result.success) {
-      alert("✅ Connection looks good! If login still fails, check your email/password or Auth providers in Supabase.");
+      alert("✅ Connection is stable.");
     } else {
-      setErrorMessage(`Diagnostic Alert: ${result.message}. This usually means your Supabase Key or URL is incorrect.`);
+      setErrorMessage(`Diagnostic Alert: ${result.message}`);
     }
     setDiagLoading(false);
   };
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     setLoading(true);
     setErrorMessage(null);
     
@@ -34,14 +35,13 @@ export default function LoginPage({ setUser }: { setUser: any }) {
       
       if (error) {
         setErrorMessage(error.message);
+        setLoading(false);
       } else if (data.user) {
-        // The onAuthStateChange in App.tsx will handle the UI update
-        // but we navigate to / to ensure the layout refreshes
-        navigate('/', { replace: true });
+        // Hard refresh to ensure full state reset and fast session pickup
+        window.location.href = window.location.origin + window.location.pathname;
       }
     } catch (err: any) {
-      setErrorMessage("System Error: " + (err.message || "Unknown error"));
-    } finally {
+      setErrorMessage("System Error: " + err.message);
       setLoading(false);
     }
   };
@@ -51,13 +51,11 @@ export default function LoginPage({ setUser }: { setUser: any }) {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
-        options: {
-          redirectTo: window.location.origin,
-        },
+        options: { redirectTo: window.location.origin },
       });
       if (error) throw error;
     } catch (err: any) {
-      setErrorMessage(`${provider} Auth failed: ${err.message}. Ensure social login is enabled in Supabase and Redirect URLs are whitelisted.`);
+      setErrorMessage(`${provider} Auth failed: ${err.message}`);
     }
   };
 
@@ -78,7 +76,7 @@ export default function LoginPage({ setUser }: { setUser: any }) {
             <div className="flex items-start gap-3">
               <AlertCircle className="shrink-0 mt-0.5" size={18} />
               <div className="space-y-1">
-                <p className="font-bold">Authentication Problem</p>
+                <p className="font-bold">Login Failed</p>
                 <p className="text-xs opacity-80 leading-relaxed">{errorMessage}</p>
               </div>
             </div>
@@ -96,7 +94,6 @@ export default function LoginPage({ setUser }: { setUser: any }) {
             onClick={() => handleSocialLogin('discord')} 
             className="group relative flex items-center justify-center gap-4 py-4 rounded-2xl bg-[#5865F2] hover:bg-[#4752c4] transition-all font-black text-sm text-white shadow-xl shadow-[#5865F2]/20 overflow-hidden"
           >
-            <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
             <MessageSquare size={20} className="relative" /> 
             <span className="relative">Login with Discord</span>
           </button>
@@ -104,7 +101,6 @@ export default function LoginPage({ setUser }: { setUser: any }) {
             onClick={() => handleSocialLogin('google')} 
             className="group relative flex items-center justify-center gap-4 py-4 rounded-2xl bg-white hover:bg-slate-100 transition-all font-black text-sm text-slate-900 shadow-xl shadow-white/5 overflow-hidden"
           >
-            <div className="absolute inset-0 bg-black/5 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
             <Chrome size={20} className="relative text-red-500" /> 
             <span className="relative">Login with Google</span>
           </button>
@@ -115,7 +111,7 @@ export default function LoginPage({ setUser }: { setUser: any }) {
             <div className="w-full border-t border-slate-800"></div>
           </div>
           <div className="relative flex justify-center text-[10px] font-black uppercase tracking-[0.2em]">
-            <span className="bg-[#020617] px-4 text-slate-600">Email & Password</span>
+            <span className="bg-[#020617] px-4 text-slate-600">Credentials</span>
           </div>
         </div>
 
@@ -151,17 +147,17 @@ export default function LoginPage({ setUser }: { setUser: any }) {
           <button 
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-2xl font-black transition-all shadow-xl shadow-blue-600/30 flex items-center justify-center gap-2 group"
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-2xl font-black transition-all shadow-xl shadow-blue-600/30 flex items-center justify-center gap-2 group disabled:opacity-70"
           >
-            {loading ? 'Authenticating...' : 'Sign In'} <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+            {loading ? <Loader2 size={18} className="animate-spin" /> : 'Sign In'} <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
           </button>
         </form>
 
         <div className="text-center pt-2">
           <p className="text-sm text-slate-500 font-medium">
-            Don't have an account?{' '}
+            No account?{' '}
             <Link to="/signup" className="text-blue-400 font-black hover:text-blue-300 transition-colors">
-              Sign Up Now
+              Join Us
             </Link>
           </p>
         </div>
