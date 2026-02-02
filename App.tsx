@@ -247,12 +247,15 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
             </div>
             <div className="flex flex-col gap-4">
               <span className="text-white font-black text-[10px] uppercase tracking-[0.2em] mb-2">Systems</span>
-              <button 
-                onClick={handleAdminAccess}
-                className="text-slate-500 hover:text-blue-400 text-sm font-bold flex items-center gap-2 transition-all text-left"
-              >
-                <Lock size={14} /> Admin Access
-              </button>
+              {/* Only show Admin Access button for grosafzemb@gmail.com */}
+              {user?.email === 'grosafzemb@gmail.com' && (
+                <button 
+                  onClick={handleAdminAccess}
+                  className="text-slate-500 hover:text-blue-400 text-sm font-bold flex items-center gap-2 transition-all text-left"
+                >
+                  <Lock size={14} /> Admin Access
+                </button>
+              )}
               <Link to="/points" className="text-slate-500 hover:text-blue-400 text-sm font-bold transition-all">Point Shop</Link>
             </div>
           </div>

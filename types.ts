@@ -20,6 +20,8 @@ export interface Product {
   stock: number;
   image_url?: string;
   type: 'account' | 'key' | 'service';
+  // secret_content is used to store account details or license keys for automatic delivery
+  secret_content?: string;
 }
 
 export interface CartItem extends Product {
