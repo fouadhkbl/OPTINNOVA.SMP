@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, Link, useNavigate } from 'react-router-dom';
 import { 
   ShoppingBag, 
@@ -79,11 +79,8 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
     setIsCheckingOut(true);
 
     try {
-      // Process each item in cart
       for (const item of cart) {
-        // 1. Create Order
-        const pointsEarned = Math.floor(item.price_dh * item.quantity * 10); // 10 points per 1 DH
-        
+        const pointsEarned = Math.floor(item.price_dh * item.quantity * 10);
         const { error: orderError } = await supabase.from('orders').insert({
           user_id: user.id,
           product_id: item.id,
@@ -92,19 +89,15 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
           status: 'completed',
           delivery_data: item.secret_content || 'Instant Delivery'
         });
-
         if (orderError) throw orderError;
 
-        // 2. Update Product Stock
         const { error: stockError } = await supabase
           .from('products')
           .update({ stock: Math.max(0, item.stock - item.quantity) })
           .eq('id', item.id);
-        
         if (stockError) throw stockError;
       }
 
-      // 3. Update User Balance & Points
       const totalPointsEarned = Math.floor(cartTotal * 10);
       const { data: updatedProfile, error: profileError } = await supabase
         .from('profiles')
@@ -118,7 +111,6 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
 
       if (profileError) throw profileError;
 
-      // 4. Log to Wallet History
       await supabase.from('wallet_history').insert({
         user_id: user.id,
         amount: -cartTotal,
@@ -131,7 +123,6 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
       alert("Order Successful! Your digital items are now available in your Profile.");
       setIsCartOpen(false);
       navigate('/profile');
-
     } catch (err: any) {
       console.error("Checkout error:", err);
       alert("Checkout failed: " + err.message);
@@ -152,7 +143,6 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
 
   return (
     <div className="min-h-screen bg-[#020617] text-slate-100 flex flex-col">
-      {/* Navbar */}
       <nav className="sticky top-0 z-50 glass border-b border-slate-800/50 px-4 md:px-8 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3 group">
@@ -165,14 +155,9 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
             </span>
           </Link>
 
-          {/* Desktop Nav */}
           <div className="hidden md:flex items-center gap-6">
             {navItems.map((item) => (
-              <Link 
-                key={item.path} 
-                to={item.path} 
-                className="flex items-center gap-2 text-slate-400 hover:text-blue-400 transition-all font-bold text-xs uppercase tracking-widest"
-              >
+              <Link key={item.path} to={item.path} className="flex items-center gap-2 text-slate-400 hover:text-blue-400 transition-all font-bold text-xs uppercase tracking-widest">
                 <item.icon size={16} />
                 {item.label}
               </Link>
@@ -180,10 +165,7 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
           </div>
 
           <div className="flex items-center gap-4">
-            <button 
-              onClick={() => setIsCartOpen(!isCartOpen)}
-              className="relative p-2 text-slate-400 hover:text-blue-400 transition-all"
-            >
+            <button onClick={() => setIsCartOpen(!isCartOpen)} className="relative p-2 text-slate-400 hover:text-blue-400 transition-all">
               <ShoppingCart size={22} />
               {cartCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full ring-2 ring-[#020617]">
@@ -193,7 +175,7 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
             </button>
 
             {user ? (
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 animate-in fade-in duration-300">
                 <Link to="/profile" className="hidden sm:flex flex-col items-end mr-2">
                   <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest">Balance</span>
                   <span className="text-sm font-black text-blue-400">{user.wallet_balance.toFixed(2)} DH</span>
@@ -219,16 +201,10 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
           </div>
         </div>
 
-        {/* Mobile Nav */}
         {isMenuOpen && (
           <div className="md:hidden absolute top-full left-0 right-0 glass border-b border-slate-800 p-6 space-y-4 animate-in slide-in-from-top duration-300">
             {navItems.map((item) => (
-              <Link 
-                key={item.path} 
-                to={item.path} 
-                onClick={() => setIsMenuOpen(false)}
-                className="flex items-center gap-4 text-slate-300 hover:text-blue-400 py-3 transition-colors font-bold uppercase text-xs tracking-widest"
-              >
+              <Link key={item.path} to={item.path} onClick={() => setIsMenuOpen(false)} className="flex items-center gap-4 text-slate-300 hover:text-blue-400 py-3 transition-colors font-bold uppercase text-xs tracking-widest">
                 <item.icon size={20} />
                 {item.label}
               </Link>
@@ -237,7 +213,6 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
         )}
       </nav>
 
-      {/* Cart Sidebar */}
       {isCartOpen && (
         <>
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]" onClick={() => setIsCartOpen(false)}></div>
@@ -279,19 +254,8 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
                   <span className="text-slate-500 uppercase tracking-widest text-[10px] font-black">Subtotal</span>
                   <span className="text-3xl font-black text-white">{cartTotal.toFixed(2)} <span className="text-sm text-slate-600">DH</span></span>
                 </div>
-                <button 
-                  disabled={isCheckingOut}
-                  onClick={handleCheckout}
-                  className="w-full bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-[2rem] font-black uppercase tracking-widest transition-all shadow-xl shadow-blue-600/30 flex items-center justify-center gap-3"
-                >
-                  {isCheckingOut ? (
-                    <>
-                      <Loader2 size={20} className="animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    'Confirm Purchase'
-                  )}
+                <button disabled={isCheckingOut} onClick={handleCheckout} className="w-full bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-[2rem] font-black uppercase tracking-widest transition-all shadow-xl shadow-blue-600/30 flex items-center justify-center gap-3">
+                  {isCheckingOut ? <><Loader2 size={20} className="animate-spin" /> Processing...</> : 'Confirm Purchase'}
                 </button>
               </div>
             )}
@@ -312,7 +276,6 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
         </Routes>
       </main>
 
-      {/* Footer */}
       <footer className="mt-auto py-16 px-8 border-t border-slate-800 bg-slate-950/40 relative overflow-hidden">
         <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-600/5 blur-[120px] -z-10 rounded-full"></div>
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-12 items-center">
@@ -335,12 +298,8 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
             </div>
             <div className="flex flex-col gap-4">
               <span className="text-white font-black text-[10px] uppercase tracking-[0.2em] mb-2">Systems</span>
-              {/* Only show Admin Access button for grosafzemb@gmail.com */}
               {user?.email === 'grosafzemb@gmail.com' && (
-                <button 
-                  onClick={handleAdminAccess}
-                  className="text-slate-500 hover:text-blue-400 text-sm font-bold flex items-center gap-2 transition-all text-left"
-                >
+                <button onClick={handleAdminAccess} className="text-slate-500 hover:text-blue-400 text-sm font-bold flex items-center gap-2 transition-all text-left">
                   <Lock size={14} /> Admin Access
                 </button>
               )}
@@ -367,72 +326,67 @@ export default function App() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Fail-safe: Force loading to stop after 5 seconds no matter what
-    const timeoutId = setTimeout(() => {
-      if (loading) setLoading(false);
-    }, 5000);
+  const fetchProfile = useCallback(async (userId: string, email: string) => {
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      
+      if (profile) {
+        return profile;
+      }
+      
+      // Fallback if profile trigger is slow or failed
+      return {
+        id: userId,
+        email: email,
+        username: email.split('@')[0] || 'Member',
+        wallet_balance: 0.00,
+        discord_points: 0,
+        role: 'user'
+      };
+    } catch (e) {
+      return {
+        id: userId,
+        email: email,
+        username: email.split('@')[0] || 'Member',
+        wallet_balance: 0.00,
+        discord_points: 0,
+        role: 'user'
+      };
+    }
+  }, []);
 
+  useEffect(() => {
     const initAuth = async () => {
       try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        
-        if (sessionError) throw sessionError;
-
+        const { data: { session } } = await supabase.auth.getSession();
         if (session) {
-          // Attempt to fetch profile with a small timeout/retry logic
-          const { data: profile, error: profileError } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-          
-          if (profile) {
-            setUser(profile);
-          } else {
-            // If profile is missing (e.g. trigger failed or didn't run yet), use fallback data
-            setUser({
-              id: session.user.id,
-              email: session.user.email || '',
-              username: session.user.email?.split('@')[0] || 'Member',
-              wallet_balance: 0.00,
-              discord_points: 0,
-              role: 'user'
-            });
-          }
+          const profile = await fetchProfile(session.user.id, session.user.email || '');
+          setUser(profile);
         }
       } catch (err) {
-        console.error("Auth initialization failed:", err);
+        console.error("Auth init failed", err);
       } finally {
         setLoading(false);
-        clearTimeout(timeoutId);
       }
     };
 
     initAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session) {
-        try {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-          if (profile) setUser(profile);
-        } catch (e) {
-          console.error("Profile refresh failed", e);
-        }
+        const profile = await fetchProfile(session.user.id, session.user.email || '');
+        setUser(profile);
       } else {
         setUser(null);
       }
     });
 
-    return () => {
-      subscription.unsubscribe();
-      clearTimeout(timeoutId);
-    };
-  }, []);
+    return () => subscription.unsubscribe();
+  }, [fetchProfile]);
 
   if (loading) return (
     <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center space-y-6">
@@ -441,7 +395,7 @@ export default function App() {
           <div className="absolute inset-0 border-4 border-blue-500 rounded-full border-t-transparent animate-spin"></div>
           <img src={LOGO_URL} className="absolute inset-0 w-12 h-12 m-auto opacity-50" />
        </div>
-       <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600 animate-pulse">Initializing Moon Space</span>
+       <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600 animate-pulse">Entering Moon Orbit</span>
     </div>
   );
 

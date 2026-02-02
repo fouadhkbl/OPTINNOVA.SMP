@@ -35,7 +35,9 @@ export default function LoginPage({ setUser }: { setUser: any }) {
       if (error) {
         setErrorMessage(error.message);
       } else if (data.user) {
-        navigate('/');
+        // The onAuthStateChange in App.tsx will handle the UI update
+        // but we navigate to / to ensure the layout refreshes
+        navigate('/', { replace: true });
       }
     } catch (err: any) {
       setErrorMessage("System Error: " + (err.message || "Unknown error"));
