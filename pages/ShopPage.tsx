@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { ShoppingCart, Search, Zap, Shield, Plus, Minus, X, CheckCircle, Filter, SlidersHorizontal, PackageCheck, PackageX, Tag, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Product, UserProfile, CartItem } from '../types';
-import { supabase } from '../lib/supabase';
+import { supabase, safeQuery } from '../lib/supabase';
 
 export default function ShopPage({ user, cart, setCart }: { user: UserProfile | null, cart: CartItem[], setCart: any }) {
   const [products, setProducts] = useState<Product[]>([]);
@@ -27,23 +27,21 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
   const fetchProducts = async () => {
     setLoading(true);
     setError(null);
-    try {
-      const { data, error: supabaseError } = await supabase
-        .from('products')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (supabaseError) throw supabaseError;
-      
-      if (data) {
-        setProducts(data);
+    
+    // Using safeQuery to handle AbortErrors gracefully
+    const { data, error: queryError } = await safeQuery(
+      supabase.from('products').select('*').order('created_at', { ascending: false })
+    );
+    
+    if (queryError) {
+      if (queryError !== 'aborted') {
+        setError(queryError);
       }
-    } catch (err: any) {
-      console.error("Shop fetch error:", err);
-      setError(err.message || "Failed to connect to database. Check your API configuration.");
-    } finally {
-      setLoading(false);
+    } else if (data) {
+      setProducts(data);
     }
+    
+    setLoading(false);
   };
 
   const categories = ['All', ...Array.from(new Set(products.map(p => p.category)))];
@@ -170,11 +168,11 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
               <AlertTriangle size={32} />
            </div>
            <div className="text-center space-y-2">
-              <h3 className="text-xl font-black text-white">Database Sync Failed</h3>
+              <h3 className="text-xl font-black text-white">Sync Disturbance</h3>
               <p className="text-slate-500 text-sm max-w-md mx-auto">{error}</p>
            </div>
            <button onClick={fetchProducts} className="flex items-center gap-2 bg-slate-900 border border-slate-800 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-blue-400 hover:text-blue-300 transition-all">
-             <RefreshCw size={14} /> Retry Connection
+             <RefreshCw size={14} /> Reconnect Shop
            </button>
         </div>
       ) : loading ? (

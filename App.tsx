@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom';
 import { 
   ShoppingBag, 
@@ -22,7 +22,7 @@ import {
   Loader2,
   CheckCircle2
 } from 'lucide-react';
-import { supabase, testSupabaseConnection } from './lib/supabase';
+import { supabase } from './lib/supabase';
 import { UserProfile, CartItem, Product } from './types';
 import { LOGO_URL, APP_NAME, DISCORD_LINK, ADMIN_PASSWORD } from './constants.tsx';
 
@@ -48,8 +48,10 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
     if (isLoggingOut) return;
     setIsLoggingOut(true);
     try {
+      // Immediate UI update for speed
+      setUser(null);
       await supabase.auth.signOut();
-      // Hard reload to clear all memory-resident state (cart, user, etc.)
+      // Hard refresh is requested for "fast and clean" account switching
       window.location.href = window.location.origin + window.location.pathname;
     } catch (e) {
       console.error("Logout failed", e);
@@ -187,11 +189,11 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
               <div className="flex items-center gap-4 animate-in fade-in duration-300">
                 <Link to="/profile" className="hidden sm:flex flex-col items-end mr-2">
                   <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest">Balance</span>
-                  <span className="text-sm font-black text-blue-400">{user.wallet_balance.toFixed(2)} DH</span>
+                  <span className="text-sm font-black text-blue-400">{user.wallet_balance?.toFixed(2) || '0.00'} DH</span>
                 </Link>
                 <Link to="/profile" className="p-0.5 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 hover:scale-110 transition-transform">
                   <div className="w-8 h-8 rounded-full bg-[#020617] flex items-center justify-center overflow-hidden">
-                    {user.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" /> : <User size={16} />}
+                    {user.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" alt="User Avatar" /> : <User size={16} />}
                   </div>
                 </Link>
                 <button onClick={handleLogout} disabled={isLoggingOut} title="Log Out" className="text-slate-500 hover:text-red-400 transition-colors">
@@ -335,91 +337,81 @@ export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const isAuthProcessed = useRef(false);
 
   const fetchProfileDetails = useCallback(async (userId: string) => {
     try {
-      const { data: profile, error } = await supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
-      
-      if (profile) return profile as UserProfile;
+      if (error) throw error;
+      return data as UserProfile;
     } catch (e: any) {
-      console.warn("Profile detail sync deferred...", e.message);
+      if (e.name !== 'AbortError') {
+        console.warn("Profile sync deferred. Might be a new user or network issue.");
+      }
+      return null;
     }
-    return null;
   }, []);
 
   const updateAuthState = useCallback(async (session: any) => {
-    if (session) {
+    if (session?.user) {
       const email = session.user.email || '';
       const userId = session.user.id;
-      
       const meta = session.user.user_metadata || {};
-      const avatarUrl = meta.avatar_url || meta.picture || meta.avatar;
-      const displayName = meta.full_name || meta.name || meta.username || meta.preferred_username || email.split('@')[0];
       
       const identity: UserProfile = {
         id: userId,
         email: email,
-        username: displayName,
-        wallet_balance: 0.00,
+        username: meta.full_name || meta.username || email.split('@')[0],
+        wallet_balance: 0,
         discord_points: 0,
         role: 'user',
-        avatar_url: avatarUrl
+        avatar_url: meta.avatar_url || meta.picture || meta.avatar
       };
       
-      // Immediate render of identity
+      // Update UI immediately with JWT identity
       setUser(identity);
 
-      // Deep sync of wallet/points in background
-      const fullProfile = await fetchProfileDetails(userId);
-      if (fullProfile) {
-        setUser(prev => ({ 
-          ...identity, 
-          ...fullProfile, 
-          avatar_url: avatarUrl || fullProfile.avatar_url 
-        }));
+      // Fetch wallet balance and roles in background
+      const profile = await fetchProfileDetails(userId);
+      if (profile) {
+        setUser(prev => prev ? ({ ...prev, ...profile }) : profile);
       }
     } else {
       setUser(null);
     }
+    setLoading(false);
   }, [fetchProfileDetails]);
 
   useEffect(() => {
     let mounted = true;
 
-    const initialize = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (mounted && session) {
-          await updateAuthState(session);
-        }
-      } catch (err) {
-        console.error("Init Error", err);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-
-    initialize();
-
+    // Use onAuthStateChange as the single source of truth for both initial session and updates
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
-      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+      
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') {
         await updateAuthState(session);
-        setLoading(false);
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
+        setLoading(false);
       }
     });
+
+    // Timeout fallback to prevent stuck loader if Supabase is unresponsive
+    const timeout = setTimeout(() => {
+      if (mounted && loading) setLoading(false);
+    }, 5000);
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
+      clearTimeout(timeout);
     };
-  }, [updateAuthState]);
+  }, [updateAuthState, loading]);
 
   if (loading) return (
     <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center space-y-6">
@@ -428,12 +420,7 @@ export default function App() {
           <div className="absolute inset-0 border-4 border-blue-500 rounded-full border-t-transparent animate-spin"></div>
           <img src={LOGO_URL} className="absolute inset-0 w-12 h-12 m-auto opacity-50 rounded-full" alt="Loader Logo" />
        </div>
-       <div className="flex flex-col items-center gap-2">
-         <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600 animate-pulse">Entering Moon Orbit</span>
-         <div className="h-1 w-32 bg-slate-900 rounded-full overflow-hidden">
-            <div className="h-full bg-blue-500 animate-[loading_2s_ease-in-out_infinite]"></div>
-         </div>
-       </div>
+       <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600 animate-pulse">Entering Moon Orbit</span>
     </div>
   );
 
