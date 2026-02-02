@@ -43,7 +43,7 @@ export default function LoginPage({ setUser }: { setUser: any }) {
           <img src={LOGO_URL} alt="Logo" className="relative w-full h-full rounded-full bg-slate-900 border border-slate-800 shadow-2xl object-contain" />
         </div>
         <h1 className="text-3xl font-black tracking-tight">Access <span className="gradient-text">Moon Night</span></h1>
-        <p className="text-slate-500 font-medium">Log in with your preferred method to start shopping.</p>
+        <p className="text-slate-500 font-medium">Log in to start your digital journey.</p>
       </div>
 
       <div className="glass rounded-[2.5rem] p-8 md:p-10 border border-slate-800 space-y-8">
@@ -54,7 +54,7 @@ export default function LoginPage({ setUser }: { setUser: any }) {
           >
             <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
             <MessageSquare size={20} className="relative" /> 
-            <span className="relative">Continue with Discord</span>
+            <span className="relative">Login with Discord</span>
           </button>
           <button 
             onClick={() => handleSocialLogin('google')} 
@@ -62,7 +62,7 @@ export default function LoginPage({ setUser }: { setUser: any }) {
           >
             <div className="absolute inset-0 bg-black/5 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
             <Chrome size={20} className="relative text-red-500" /> 
-            <span className="relative">Continue with Google</span>
+            <span className="relative">Login with Google</span>
           </button>
         </div>
 
@@ -71,20 +71,20 @@ export default function LoginPage({ setUser }: { setUser: any }) {
             <div className="w-full border-t border-slate-800"></div>
           </div>
           <div className="relative flex justify-center text-[10px] font-black uppercase tracking-[0.2em]">
-            <span className="bg-[#020617] px-4 text-slate-600">Secure Direct Login</span>
+            <span className="bg-[#020617] px-4 text-slate-600">Email & Password</span>
           </div>
         </div>
 
         <form onSubmit={handleEmailLogin} className="space-y-4">
           <div className="space-y-1">
-            <label className="text-[10px] text-slate-500 font-black uppercase px-2 tracking-widest">Email Address</label>
+            <label className="text-[10px] text-slate-500 font-black uppercase px-2 tracking-widest">Email</label>
             <div className="relative group">
               <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600 group-focus-within:text-blue-500 transition-colors" size={18} />
               <input 
                 required
                 type="email" 
                 placeholder="name@example.com" 
-                className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:border-blue-500/50 focus:bg-slate-900 transition-all text-white font-medium"
+                className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:border-blue-500/50 transition-all text-white font-medium"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
@@ -98,7 +98,7 @@ export default function LoginPage({ setUser }: { setUser: any }) {
                 required
                 type="password" 
                 placeholder="••••••••" 
-                className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:border-blue-500/50 focus:bg-slate-900 transition-all text-white font-medium"
+                className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:border-blue-500/50 transition-all text-white font-medium"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
@@ -114,12 +114,9 @@ export default function LoginPage({ setUser }: { setUser: any }) {
         </form>
       </div>
 
-      <div className="text-center space-y-2">
+      <div className="text-center">
         <p className="text-slate-600 text-sm font-medium">
-          New to the shop? Simply use social login to join.
-        </p>
-        <p className="text-xs text-slate-700 uppercase font-black tracking-widest">
-          Trusted by 7,000+ members
+          Trusted by 7,000+ Discord members.
         </p>
       </div>
     </div>

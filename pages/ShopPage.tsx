@@ -1,30 +1,35 @@
 
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Search, Filter, Tag, Info, X, CheckCircle, Zap, Shield, Plus, Minus } from 'lucide-react';
+import { ShoppingCart, Search, Zap, Shield, Plus, Minus, X, CheckCircle } from 'lucide-react';
 import { Product, UserProfile, CartItem } from '../types';
 import { supabase } from '../lib/supabase';
 
-const MOCK_PRODUCTS: Product[] = [
-  { id: '1', name: 'Netflix Premium 4K', description: '1 Month Shared Account, Ultra HD, 4 Screens Support. No ads, high quality streaming.', price_dh: 45, category: 'Streaming', stock: 12, type: 'account' },
-  { id: '2', name: 'Valorant Points Key (1200)', description: 'Region Free Global Key for Valorant. Instant delivery upon purchase.', price_dh: 120, category: 'Gaming', stock: 50, type: 'key' },
-  { id: '3', name: 'Spotify Individual 1YR', description: 'Private Account Upgrade. No ads, offline listening, unlimited skips.', price_dh: 150, category: 'Music', stock: 8, type: 'account' },
-  { id: '4', name: 'Discord Nitro (1 Year)', description: 'Gift Link - All regions. 2 Boosts, larger upload limit, custom emojis.', price_dh: 400, category: 'Social', stock: 5, type: 'key' },
-  { id: '5', name: 'Windows 11 Pro Key', description: 'OEM Lifetime Activation. Official Microsoft license key.', price_dh: 80, category: 'Software', stock: 100, type: 'key' },
-  { id: '6', name: 'PSN $50 Gift Card', description: 'US Region Only. Add funds to your Playstation wallet.', price_dh: 550, category: 'Gaming', stock: 20, type: 'key' },
-];
-
 export default function ShopPage({ user, cart, setCart }: { user: UserProfile | null, cart: CartItem[], setCart: any }) {
-  const [products, setProducts] = useState<Product[]>(MOCK_PRODUCTS);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState(1);
 
-  const categories = ['All', ...Array.from(new Set(MOCK_PRODUCTS.map(p => p.category)))];
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  const fetchProducts = async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from('products').select('*').order('created_at', { ascending: false });
+    if (!error && data) {
+      setProducts(data);
+    }
+    setLoading(false);
+  };
+
+  const categories = ['All', ...Array.from(new Set(products.map(p => p.category)))];
 
   const filteredProducts = products.filter(p => 
     (activeCategory === 'All' || p.category === activeCategory) &&
-    (p.name.toLowerCase().includes(search.toLowerCase()) || p.description.toLowerCase().includes(search.toLowerCase()))
+    (p.name.toLowerCase().includes(search.toLowerCase()) || p.description?.toLowerCase().includes(search.toLowerCase()))
   );
 
   const handleAddToCart = (product: Product, q: number = 1) => {
@@ -34,7 +39,6 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
     } else {
       setCart([...cart, { ...product, quantity: q }]);
     }
-    alert(`${product.name} added to cart!`);
     if (selectedProduct) setSelectedProduct(null);
   };
 
@@ -43,7 +47,7 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div className="space-y-2">
           <h1 className="text-4xl font-black tracking-tight"><span className="gradient-text">Moon Night</span> Shop</h1>
-          <p className="text-slate-500 font-medium">Browse premium digital keys and accounts.</p>
+          <p className="text-slate-500 font-medium">Browse our premium digital selection.</p>
         </div>
         
         <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
@@ -75,61 +79,66 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {filteredProducts.map(product => (
-          <div key={product.id} className="glass rounded-[2rem] overflow-hidden group border border-slate-800 hover:border-blue-500/40 transition-all flex flex-col relative">
-            <div 
-              className="aspect-video bg-slate-800/50 relative overflow-hidden flex items-center justify-center cursor-pointer"
-              onClick={() => { setSelectedProduct(product); setQuantity(1); }}
-            >
-              <img 
-                src={`https://picsum.photos/seed/${product.id}/400/225`} 
-                alt={product.name}
-                className="w-full h-full object-cover opacity-80 group-hover:scale-105 group-hover:opacity-100 transition-all duration-700"
-              />
-              <div className="absolute top-4 right-4 px-3 py-1 bg-slate-950/80 backdrop-blur-md rounded-lg text-[10px] font-black tracking-widest border border-white/5 uppercase">
-                {product.type}
+      {loading ? (
+        <div className="flex justify-center py-20">
+          <div className="w-12 h-12 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {filteredProducts.map(product => (
+            <div key={product.id} className="glass rounded-[2rem] overflow-hidden group border border-slate-800 hover:border-blue-500/40 transition-all flex flex-col relative animate-in fade-in slide-in-from-bottom-4">
+              <div 
+                className="aspect-video bg-slate-800/50 relative overflow-hidden flex items-center justify-center cursor-pointer"
+                onClick={() => { setSelectedProduct(product); setQuantity(1); }}
+              >
+                <img 
+                  src={product.image_url || `https://picsum.photos/seed/${product.id}/400/225`} 
+                  alt={product.name}
+                  className="w-full h-full object-cover opacity-80 group-hover:scale-105 group-hover:opacity-100 transition-all duration-700"
+                />
+                <div className="absolute top-4 right-4 px-3 py-1 bg-slate-950/80 backdrop-blur-md rounded-lg text-[10px] font-black tracking-widest border border-white/5 uppercase">
+                  {product.type}
+                </div>
+              </div>
+              
+              <div className="p-6 space-y-4 flex-grow flex flex-col">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-blue-400 text-[10px] font-black uppercase tracking-widest">{product.category}</span>
+                    <span className="text-slate-500 text-[10px] font-bold flex items-center gap-1 uppercase">
+                      <Zap size={10} className="text-yellow-500" /> {product.stock} stock
+                    </span>
+                  </div>
+                  <h3 className="text-lg font-bold text-slate-200 group-hover:text-blue-400 transition-colors cursor-pointer" onClick={() => setSelectedProduct(product)}>{product.name}</h3>
+                  <p className="text-slate-500 text-xs line-clamp-2">{product.description}</p>
+                </div>
+
+                <div className="pt-4 mt-auto flex items-center justify-between">
+                  <div>
+                    <span className="text-2xl font-black text-white">{product.price_dh}</span>
+                    <span className="text-xs text-slate-500 ml-1 font-bold">DH</span>
+                  </div>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); handleAddToCart(product); }}
+                    className="bg-blue-600 hover:bg-blue-500 text-white p-3 rounded-xl transition-all shadow-lg shadow-blue-600/20 group/btn"
+                  >
+                    <Plus size={20} className="group-hover/btn:rotate-90 transition-transform" />
+                  </button>
+                </div>
               </div>
             </div>
-            
-            <div className="p-6 space-y-4 flex-grow flex flex-col">
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-blue-400 text-[10px] font-black uppercase tracking-widest">{product.category}</span>
-                  <span className="text-slate-500 text-[10px] font-bold flex items-center gap-1 uppercase">
-                    <Zap size={10} className="text-yellow-500" /> {product.stock} stock
-                  </span>
-                </div>
-                <h3 className="text-lg font-bold text-slate-200 group-hover:text-blue-400 transition-colors cursor-pointer" onClick={() => setSelectedProduct(product)}>{product.name}</h3>
-                <p className="text-slate-500 text-xs line-clamp-2">{product.description}</p>
-              </div>
+          ))}
+        </div>
+      )}
 
-              <div className="pt-4 mt-auto flex items-center justify-between">
-                <div>
-                  <span className="text-2xl font-black text-white">{product.price_dh}</span>
-                  <span className="text-xs text-slate-500 ml-1 font-bold">DH</span>
-                </div>
-                <button 
-                  onClick={() => handleAddToCart(product)}
-                  className="bg-blue-600 hover:bg-blue-500 text-white p-3 rounded-xl transition-all shadow-lg shadow-blue-600/20 group/btn"
-                >
-                  <Plus size={20} className="group-hover/btn:rotate-90 transition-transform" />
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Product Details Modal */}
       {selectedProduct && (
         <>
           <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] transition-opacity" onClick={() => setSelectedProduct(null)}></div>
           <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-4xl z-[110] p-4 md:p-8 animate-in zoom-in-95 duration-300">
-            <div className="glass rounded-[3rem] border border-slate-700 overflow-hidden flex flex-col md:flex-row shadow-2xl">
-              <div className="md:w-1/2 relative bg-slate-900">
+            <div className="glass rounded-[3rem] border border-slate-700 overflow-hidden flex flex-col md:flex-row shadow-2xl max-h-[90vh] overflow-y-auto md:overflow-hidden">
+              <div className="md:w-1/2 relative bg-slate-900 min-h-[300px]">
                 <img 
-                  src={`https://picsum.photos/seed/${selectedProduct.id}/800/800`} 
+                  src={selectedProduct.image_url || `https://picsum.photos/seed/${selectedProduct.id}/800/800`} 
                   className="w-full h-full object-cover" 
                   alt={selectedProduct.name} 
                 />
@@ -138,7 +147,7 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
                 </div>
               </div>
               
-              <div className="md:w-1/2 p-8 md:p-12 space-y-8 relative">
+              <div className="md:w-1/2 p-8 md:p-12 space-y-8 relative flex flex-col justify-center">
                 <button onClick={() => setSelectedProduct(null)} className="absolute top-6 right-6 p-2 rounded-full hover:bg-white/10 text-slate-400 transition-all">
                   <X size={24} />
                 </button>
@@ -171,7 +180,7 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
                       >
                         <Minus size={20} />
                       </button>
-                      <span className="text-xl font-black min-w-[30ch] text-center w-12">{quantity}</span>
+                      <span className="text-xl font-black w-8 text-center">{quantity}</span>
                       <button 
                         onClick={() => setQuantity(Math.min(selectedProduct.stock, quantity + 1))}
                         className="p-3 rounded-xl hover:bg-slate-800 text-slate-400 transition-all"
@@ -181,19 +190,17 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
                     </div>
                   </div>
 
-                  <div className="flex gap-4">
-                    <button 
-                      onClick={() => handleAddToCart(selectedProduct, quantity)}
-                      className="flex-grow bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-3xl font-black transition-all shadow-xl shadow-blue-600/30 flex items-center justify-center gap-3"
-                    >
-                      <ShoppingCart size={22} /> Add to Cart — {(selectedProduct.price_dh * quantity).toFixed(2)} DH
-                    </button>
-                  </div>
+                  <button 
+                    onClick={() => handleAddToCart(selectedProduct, quantity)}
+                    className="w-full bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-3xl font-black transition-all shadow-xl shadow-blue-600/30 flex items-center justify-center gap-3"
+                  >
+                    <ShoppingCart size={22} /> Add to Cart — {(selectedProduct.price_dh * quantity).toFixed(2)} DH
+                  </button>
                 </div>
 
                 <div className="pt-4 flex items-center gap-4 text-xs text-slate-500 font-bold uppercase tracking-widest">
                   <span className="flex items-center gap-1.5"><CheckCircle size={14} className="text-blue-500" /> 24/7 Support</span>
-                  <span className="flex items-center gap-1.5"><CheckCircle size={14} className="text-blue-500" /> Secure Storage</span>
+                  <span className="flex items-center gap-1.5"><CheckCircle size={14} className="text-blue-500" /> Moon Verified</span>
                 </div>
               </div>
             </div>
@@ -201,7 +208,7 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
         </>
       )}
 
-      {filteredProducts.length === 0 && (
+      {!loading && filteredProducts.length === 0 && (
         <div className="text-center py-24 space-y-4">
           <div className="w-20 h-20 bg-slate-900/50 rounded-full flex items-center justify-center mx-auto text-slate-700 border border-slate-800">
             <Search size={32} />
