@@ -18,7 +18,9 @@ import {
   Zap,
   ShoppingCart,
   Trash2,
-  Lock
+  Lock,
+  Loader2,
+  CheckCircle2
 } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import { UserProfile, CartItem, Product } from './types';
@@ -36,6 +38,7 @@ import LoginPage from './pages/LoginPage';
 const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, setUser: any, cart: CartItem[], setCart: any }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -56,6 +59,76 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
 
   const removeFromCart = (productId: string) => {
     setCart(cart.filter(item => item.id !== productId));
+  };
+
+  const handleCheckout = async () => {
+    if (!user) {
+      navigate('/login');
+      setIsCartOpen(false);
+      return;
+    }
+
+    if (user.wallet_balance < cartTotal) {
+      alert(`Insufficient balance! You need ${(cartTotal - user.wallet_balance).toFixed(2)} more DH. Go to Profile to top up.`);
+      setIsCartOpen(false);
+      navigate('/profile');
+      return;
+    }
+
+    setIsCheckingOut(true);
+
+    try {
+      // Process each item in cart
+      for (const item of cart) {
+        // 1. Create Order
+        const pointsEarned = Math.floor(item.price_dh * item.quantity * 10); // 10 points per 1 DH
+        
+        const { error: orderError } = await supabase.from('orders').insert({
+          user_id: user.id,
+          product_id: item.id,
+          price_paid: item.price_dh * item.quantity,
+          points_earned: pointsEarned,
+          status: 'completed',
+          delivery_data: item.secret_content || 'Instant Delivery'
+        });
+
+        if (orderError) throw orderError;
+
+        // 2. Update Product Stock
+        const { error: stockError } = await supabase
+          .from('products')
+          .update({ stock: Math.max(0, item.stock - item.quantity) })
+          .eq('id', item.id);
+        
+        if (stockError) throw stockError;
+      }
+
+      // 3. Update User Balance & Points
+      const totalPointsEarned = Math.floor(cartTotal * 10);
+      const { data: updatedProfile, error: profileError } = await supabase
+        .from('profiles')
+        .update({ 
+          wallet_balance: user.wallet_balance - cartTotal,
+          discord_points: Number(user.discord_points) + totalPointsEarned
+        })
+        .eq('id', user.id)
+        .select()
+        .single();
+
+      if (profileError) throw profileError;
+
+      setUser(updatedProfile);
+      setCart([]);
+      alert("Order Successful! Your digital items are now available in your Profile.");
+      setIsCartOpen(false);
+      navigate('/profile');
+
+    } catch (err: any) {
+      console.error("Checkout error:", err);
+      alert("Checkout failed: " + err.message);
+    } finally {
+      setIsCheckingOut(false);
+    }
   };
 
   const handleAdminAccess = () => {
@@ -198,13 +271,18 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
                   <span className="text-3xl font-black text-white">{cartTotal.toFixed(2)} <span className="text-sm text-slate-600">DH</span></span>
                 </div>
                 <button 
-                  onClick={() => {
-                    if(!user) { navigate('/login'); setIsCartOpen(false); return; }
-                    alert("Checkout feature coming soon! Ensure your wallet has sufficient balance.");
-                  }}
-                  className="w-full bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-[2rem] font-black uppercase tracking-widest transition-all shadow-xl shadow-blue-600/30"
+                  disabled={isCheckingOut}
+                  onClick={handleCheckout}
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-[2rem] font-black uppercase tracking-widest transition-all shadow-xl shadow-blue-600/30 flex items-center justify-center gap-3"
                 >
-                  Confirm Purchase
+                  {isCheckingOut ? (
+                    <>
+                      <Loader2 size={20} className="animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    'Confirm Purchase'
+                  )}
                 </button>
               </div>
             )}
@@ -280,49 +358,70 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check current session
+    // Fail-safe: Force loading to stop after 5 seconds no matter what
+    const timeoutId = setTimeout(() => {
+      if (loading) setLoading(false);
+    }, 5000);
+
     const initAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        // Fetch profile
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
+      try {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
-        if (profile) {
-          setUser(profile);
-        } else {
-          setUser({
-            id: session.user.id,
-            email: session.user.email || '',
-            username: session.user.email?.split('@')[0] || 'Member',
-            wallet_balance: 0.00,
-            discord_points: 0,
-            role: 'user'
-          });
+        if (sessionError) throw sessionError;
+
+        if (session) {
+          // Attempt to fetch profile with a small timeout/retry logic
+          const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          
+          if (profile) {
+            setUser(profile);
+          } else {
+            // If profile is missing (e.g. trigger failed or didn't run yet), use fallback data
+            setUser({
+              id: session.user.id,
+              email: session.user.email || '',
+              username: session.user.email?.split('@')[0] || 'Member',
+              wallet_balance: 0.00,
+              discord_points: 0,
+              role: 'user'
+            });
+          }
         }
+      } catch (err) {
+        console.error("Auth initialization failed:", err);
+      } finally {
+        setLoading(false);
+        clearTimeout(timeoutId);
       }
-      setLoading(false);
     };
 
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (session) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-        if (profile) setUser(profile);
+        try {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          if (profile) setUser(profile);
+        } catch (e) {
+          console.error("Profile refresh failed", e);
+        }
       } else {
         setUser(null);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timeoutId);
+    };
   }, []);
 
   if (loading) return (
