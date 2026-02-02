@@ -1,12 +1,15 @@
 
 import React, { useState, useEffect } from 'react';
-import { Trophy, Calendar, Users, Star, ArrowRight, Loader2, Sparkles } from 'lucide-react';
+import { Trophy, Calendar, Users, Star, ArrowRight, Loader2, Sparkles, Gamepad2, Target, ChevronRight } from 'lucide-react';
 import { Tournament } from '../types';
 import { supabase } from '../lib/supabase';
+
+type TournamentFilter = 'all' | 'open' | 'live' | 'past';
 
 export default function TournamentPage() {
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeFilter, setActiveFilter] = useState<TournamentFilter>('all');
 
   useEffect(() => {
     fetchTournaments();
@@ -14,111 +17,140 @@ export default function TournamentPage() {
 
   const fetchTournaments = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('tournaments').select('*').order('tournament_date', { ascending: true });
+    const { data, error } = await supabase.from('tournaments').select('*').order('tournament_date', { ascending: false });
     if (!error && data) {
       setTournaments(data.map(t => ({ ...t, date: t.tournament_date })));
     }
     setLoading(false);
   };
 
-  const getStatusColor = (status: Tournament['status']) => {
-    switch (status) {
-      case 'upcoming': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-      case 'ongoing': return 'bg-green-500/20 text-green-400 border-green-500/30';
-      case 'finished': return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
-    }
+  const getFilteredTournaments = () => {
+    if (activeFilter === 'all') return tournaments;
+    if (activeFilter === 'past') return tournaments.filter(t => t.status === 'finished');
+    if (activeFilter === 'open') return tournaments.filter(t => t.status === 'upcoming');
+    if (activeFilter === 'live') return tournaments.filter(t => t.status === 'ongoing');
+    return tournaments;
   };
 
   return (
-    <div className="space-y-16 pb-20 animate-in fade-in duration-700">
-      <div className="relative overflow-hidden glass rounded-[3rem] p-10 md:p-16 border border-blue-500/10">
-        <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-blue-600/10 blur-[120px] -z-10"></div>
-        <div className="max-w-3xl space-y-6 relative">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-black uppercase tracking-[0.3em]">
-            <Trophy size={14} className="text-yellow-500" /> The Elite Moon Arena
-          </div>
-          <h1 className="text-5xl md:text-6xl font-black tracking-tighter leading-none">Competitive <span className="gradient-text">Gaming Ecosystem</span></h1>
-          <p className="text-slate-400 text-lg md:text-xl font-medium leading-relaxed">
-            Where legends are born. Join high-stakes tournaments hosted by Moon Night and compete for massive DH rewards and exclusive digital roles.
-          </p>
+    <div className="space-y-12 pb-20 animate-in fade-in duration-700">
+      {/* Filter Tabs */}
+      <div className="flex justify-center">
+        <div className="inline-flex items-center gap-1 bg-slate-900/80 backdrop-blur-xl border border-slate-800 p-1.5 rounded-2xl shadow-2xl">
+          {(['all', 'open', 'live', 'past'] as TournamentFilter[]).map((filter) => (
+            <button
+              key={filter}
+              onClick={() => setActiveFilter(filter)}
+              className={`px-8 py-2.5 rounded-xl text-sm font-bold capitalize transition-all duration-300 ${
+                activeFilter === filter 
+                ? 'bg-gradient-to-r from-[#4f46e5] to-[#7c3aed] text-white shadow-lg' 
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              {filter}
+            </button>
+          ))}
         </div>
       </div>
 
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-32 space-y-4">
-           <Loader2 className="animate-spin text-blue-500" size={48} />
-           <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">Retrieving Arena Intel...</span>
+      <div className="space-y-10">
+        {/* Section Header */}
+        <div className="flex items-center gap-4">
+          <div className="p-2.5 glass rounded-xl border border-slate-800 text-slate-400">
+            <Trophy size={24} />
+          </div>
+          <h2 className="text-3xl font-black text-slate-100 tracking-tight">
+            {activeFilter === 'past' ? 'Past Tournaments' : 
+             activeFilter === 'open' ? 'Open Registrations' :
+             activeFilter === 'live' ? 'Live Matches' : 'All Tournaments'}
+          </h2>
         </div>
-      ) : tournaments.length === 0 ? (
-        <div className="text-center py-24 glass rounded-[2.5rem] border border-dashed border-slate-800 space-y-6 opacity-60">
-           <div className="w-20 h-20 bg-slate-900 rounded-3xl flex items-center justify-center mx-auto text-slate-700"><Sparkles size={40}/></div>
-           <p className="font-black text-slate-600 uppercase tracking-[0.2em] text-sm">The arena is currently quiet. Check back soon for new events!</p>
-        </div>
-      ) : (
-        <div className="grid gap-10">
-          {tournaments.map(tournament => (
-            <div key={tournament.id} className="glass rounded-[2.5rem] p-8 md:p-12 flex flex-col md:flex-row gap-10 border border-slate-800 hover:border-blue-500/30 transition-all duration-500 group relative overflow-hidden">
-              <div className="absolute bottom-0 right-0 w-64 h-64 bg-blue-600/5 blur-[100px] -z-10 group-hover:bg-blue-600/10 transition-colors"></div>
-              
-              <div className="md:w-[400px] aspect-[16/10] bg-slate-900 rounded-3xl overflow-hidden shadow-2xl border border-slate-800/50">
-                <img 
-                  src={`https://picsum.photos/seed/${tournament.id}/800/500`} 
-                  alt={tournament.title}
-                  className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000 opacity-80 group-hover:opacity-100"
-                />
-              </div>
-              
-              <div className="flex-grow space-y-8 flex flex-col justify-center">
-                <div className="flex flex-wrap items-center gap-4">
-                  <span className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] border shadow-lg ${getStatusColor(tournament.status)}`}>
-                    {tournament.status}
-                  </span>
-                  <span className="flex items-center gap-2 text-slate-500 text-xs font-black uppercase tracking-widest bg-slate-900/50 px-4 py-2 rounded-xl border border-slate-800">
-                    <Calendar size={14} className="text-blue-500" /> {new Date(tournament.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </span>
+
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-32 space-y-4">
+             <Loader2 className="animate-spin text-blue-500" size={48} />
+             <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">Syncing Arena...</span>
+          </div>
+        ) : getFilteredTournaments().length === 0 ? (
+          <div className="text-center py-24 glass rounded-[2.5rem] border border-dashed border-slate-800 space-y-6 opacity-60">
+             <div className="w-20 h-20 bg-slate-900 rounded-3xl flex items-center justify-center mx-auto text-slate-700"><Sparkles size={40}/></div>
+             <p className="font-black text-slate-600 uppercase tracking-widest text-sm">No events found in this category.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {getFilteredTournaments().map(tournament => (
+              <div key={tournament.id} className="glass rounded-[2rem] overflow-hidden border border-slate-800/50 hover:border-blue-500/30 transition-all duration-500 group flex flex-col bg-slate-900/40">
+                {/* Image Section */}
+                <div className="relative aspect-[16/9] overflow-hidden">
+                  <img 
+                    src={`https://picsum.photos/seed/${tournament.id}/800/450`} 
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                    alt={tournament.title}
+                  />
+                  {/* Overlay Badges */}
+                  <div className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 bg-black/60 backdrop-blur-md rounded-full border border-white/10 shadow-xl">
+                    <Gamepad2 size={12} className="text-white" />
+                    <span className="text-[10px] font-black text-white uppercase tracking-wider">{tournament.role_required}</span>
+                  </div>
+                  
+                  {tournament.status === 'finished' && (
+                    <div className="absolute top-4 right-4 px-3 py-1.5 bg-black/40 backdrop-blur-sm rounded-full border border-white/5">
+                      <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Completed</span>
+                    </div>
+                  )}
+                  {tournament.status === 'ongoing' && (
+                    <div className="absolute top-4 right-4 px-3 py-1.5 bg-red-600/80 backdrop-blur-sm rounded-full border border-white/20 animate-pulse">
+                      <span className="text-[10px] font-black text-white uppercase tracking-widest">Live Now</span>
+                    </div>
+                  )}
                 </div>
 
-                <div className="space-y-4">
-                  <h3 className="text-3xl font-black text-white group-hover:text-blue-400 transition-colors">{tournament.title}</h3>
-                  <p className="text-slate-400 leading-relaxed font-medium text-lg">{tournament.description}</p>
-                </div>
+                {/* Content Section */}
+                <div className="p-8 space-y-6 flex-grow">
+                  <h3 className="text-2xl font-black text-white group-hover:text-blue-400 transition-colors line-clamp-1">{tournament.title}</h3>
+                  <p className="text-slate-500 text-sm leading-relaxed line-clamp-2 font-medium">
+                    {tournament.description}
+                  </p>
 
-                <div className="grid grid-cols-2 gap-8 pt-4">
-                  <div className="space-y-2">
-                    <span className="text-[10px] text-slate-600 font-black uppercase tracking-[0.2em]">Requirement</span>
-                    <div className="flex items-center gap-3 text-slate-200 font-black uppercase text-xs tracking-widest">
-                      <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-500 border border-blue-500/10"><Users size={16} /></div> 
-                      {tournament.role_required}
+                  <div className="space-y-3 pt-2">
+                    <div className="flex items-center gap-3">
+                      <Users size={16} className="text-blue-500" />
+                      <span className="text-sm font-bold text-slate-300">26 Players</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Target size={16} className="text-purple-500" />
+                      <span className="text-sm font-bold text-slate-300">Solo / 1v1</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Calendar size={16} className="text-slate-500" />
+                      <span className="text-sm font-bold text-slate-500">
+                        {new Date(tournament.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <span className="text-[10px] text-slate-600 font-black uppercase tracking-[0.2em]">Grand Prize</span>
-                    <div className="flex items-center gap-3 text-yellow-500 font-black uppercase text-xs tracking-widest">
-                      <div className="w-8 h-8 rounded-lg bg-yellow-500/10 flex items-center justify-center text-yellow-500 border border-yellow-500/10"><Star size={16} /></div> 
-                      {tournament.prize_pool}
-                    </div>
-                  </div>
                 </div>
 
-                <div className="pt-8">
+                {/* Footer Section */}
+                <div className="p-6 border-t border-slate-800/50 flex items-center justify-between bg-slate-900/20">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-yellow-500/10 rounded-lg text-yellow-500">
+                      <Trophy size={18} />
+                    </div>
+                    <span className="text-lg font-black text-yellow-500">{tournament.prize_pool}</span>
+                  </div>
+                  
                   <button 
-                    disabled={tournament.status === 'finished'}
                     onClick={() => window.open('https://discord.gg/wJUsVzDuXk', '_blank')}
-                    className={`w-full md:w-auto px-10 py-5 rounded-[2rem] font-black uppercase text-xs tracking-[0.3em] transition-all flex items-center justify-center gap-3 active:scale-95 shadow-2xl ${
-                      tournament.status === 'finished' 
-                      ? 'bg-slate-900 text-slate-600 cursor-not-allowed border border-slate-800'
-                      : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/30'
-                    }`}
+                    className="flex items-center gap-1 text-xs font-black uppercase tracking-widest text-slate-400 hover:text-blue-400 transition-colors group/view"
                   >
-                    {tournament.status === 'finished' ? 'Event Concluded' : 'Register via Discord'} 
-                    {tournament.status !== 'finished' && <ArrowRight size={18} className="group-hover:translate-x-2 transition-transform" />}
+                    View <ChevronRight size={16} className="group-hover/view:translate-x-1 transition-transform" />
                   </button>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

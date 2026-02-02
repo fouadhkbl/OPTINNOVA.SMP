@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Search, Zap, Shield, Plus, Minus, X, CheckCircle } from 'lucide-react';
+import { ShoppingCart, Search, Zap, Shield, Plus, Minus, X, CheckCircle, Filter, SlidersHorizontal, PackageCheck, PackageX, Tag } from 'lucide-react';
 import { Product, UserProfile, CartItem } from '../types';
 import { supabase } from '../lib/supabase';
 
@@ -11,6 +11,13 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
   const [activeCategory, setActiveCategory] = useState('All');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState(1);
+
+  // New Filters
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterType, setFilterType] = useState<string>('All');
+  const [filterStock, setFilterStock] = useState<'All' | 'In Stock' | 'Out of Stock'>('All');
+  const [minPrice, setMinPrice] = useState<string>('');
+  const [maxPrice, setMaxPrice] = useState<string>('');
 
   useEffect(() => {
     fetchProducts();
@@ -27,10 +34,16 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
 
   const categories = ['All', ...Array.from(new Set(products.map(p => p.category)))];
 
-  const filteredProducts = products.filter(p => 
-    (activeCategory === 'All' || p.category === activeCategory) &&
-    (p.name.toLowerCase().includes(search.toLowerCase()) || p.description?.toLowerCase().includes(search.toLowerCase()))
-  );
+  const filteredProducts = products.filter(p => {
+    const matchesCategory = activeCategory === 'All' || p.category === activeCategory;
+    const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.description?.toLowerCase().includes(search.toLowerCase());
+    const matchesType = filterType === 'All' || p.type === filterType.toLowerCase();
+    const matchesStock = filterStock === 'All' || (filterStock === 'In Stock' ? p.stock > 0 : p.stock === 0);
+    const matchesMinPrice = minPrice === '' || p.price_dh >= parseFloat(minPrice);
+    const matchesMaxPrice = maxPrice === '' || p.price_dh <= parseFloat(maxPrice);
+    
+    return matchesCategory && matchesSearch && matchesType && matchesStock && matchesMinPrice && matchesMaxPrice;
+  });
 
   const handleAddToCart = (product: Product, q: number = 1) => {
     const existing = cart.find(item => item.id === product.id);
@@ -40,6 +53,15 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
       setCart([...cart, { ...product, quantity: q }]);
     }
     if (selectedProduct) setSelectedProduct(null);
+  };
+
+  const resetFilters = () => {
+    setSearch('');
+    setActiveCategory('All');
+    setFilterType('All');
+    setFilterStock('All');
+    setMinPrice('');
+    setMaxPrice('');
   };
 
   return (
@@ -61,15 +83,65 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+          <button 
+            onClick={() => setShowFilters(!showFilters)}
+            className={`px-4 py-3 rounded-xl border flex items-center gap-2 text-xs font-black uppercase tracking-widest transition-all ${showFilters ? 'bg-blue-600 border-blue-600 text-white' : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'}`}
+          >
+            <SlidersHorizontal size={16} /> Filters
+          </button>
+        </div>
+      </div>
+
+      {/* Advanced Filter Bar */}
+      {showFilters && (
+        <div className="glass p-6 rounded-[2rem] border border-slate-800 animate-in slide-in-from-top-4 duration-500 space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="space-y-2">
+               <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-2 flex items-center gap-2"><Tag size={12}/> Product Type</label>
+               <select className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-black uppercase outline-none focus:border-blue-500/50 text-slate-300" value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+                 <option value="All">All Modalities</option>
+                 <option value="Account">Accounts</option>
+                 <option value="Key">License Keys</option>
+                 <option value="Service">Services</option>
+               </select>
+            </div>
+
+            <div className="space-y-2">
+               <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-2 flex items-center gap-2"><PackageCheck size={12}/> Availability</label>
+               <select className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs font-black uppercase outline-none focus:border-blue-500/50 text-slate-300" value={filterStock} onChange={(e) => setFilterStock(e.target.value as any)}>
+                 <option value="All">Every Status</option>
+                 <option value="In Stock">Currently In Stock</option>
+                 <option value="Out of Stock">Sold Out Only</option>
+               </select>
+            </div>
+
+            <div className="space-y-2 lg:col-span-2">
+               <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 px-2 flex items-center gap-2">Price Range (DH)</label>
+               <div className="flex items-center gap-4">
+                  <div className="relative flex-grow">
+                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-600">MIN</span>
+                     <input type="number" placeholder="0" className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-12 pr-4 text-xs font-black outline-none focus:border-blue-500/50" value={minPrice} onChange={(e) => setMinPrice(e.target.value)} />
+                  </div>
+                  <div className="relative flex-grow">
+                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-600">MAX</span>
+                     <input type="number" placeholder="9999" className="w-full bg-slate-950 border border-slate-800 rounded-xl py-3 pl-12 pr-4 text-xs font-black outline-none focus:border-blue-500/50" value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} />
+                  </div>
+                  <button onClick={resetFilters} className="p-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 transition-all border border-slate-700">
+                    <X size={18} />
+                  </button>
+               </div>
+            </div>
+          </div>
+          
+          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none border-t border-slate-800/50 pt-6">
             {categories.map(cat => (
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat)}
-                className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest whitespace-nowrap transition-all border ${
+                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-all border ${
                   activeCategory === cat 
-                  ? 'bg-blue-600 border-blue-600 text-white' 
-                  : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
+                  ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-600/20' 
+                  : 'bg-slate-950/50 border-slate-800 text-slate-500 hover:border-slate-700'
                 }`}
               >
                 {cat}
@@ -77,7 +149,7 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
             ))}
           </div>
         </div>
-      </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-20">
@@ -96,7 +168,8 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
                   alt={product.name}
                   className="w-full h-full object-cover opacity-80 group-hover:scale-105 group-hover:opacity-100 transition-all duration-700"
                 />
-                <div className="absolute top-4 right-4 px-3 py-1 bg-slate-950/80 backdrop-blur-md rounded-lg text-[10px] font-black tracking-widest border border-white/5 uppercase">
+                <div className="absolute top-4 right-4 px-3 py-1 bg-slate-950/80 backdrop-blur-md rounded-lg text-[10px] font-black tracking-widest border border-white/5 uppercase flex items-center gap-1.5">
+                  <div className={`w-1.5 h-1.5 rounded-full ${product.stock > 0 ? 'bg-blue-500 animate-pulse' : 'bg-red-500'}`}></div>
                   {product.type}
                 </div>
               </div>
@@ -105,24 +178,33 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
                     <span className="text-blue-400 text-[10px] font-black uppercase tracking-widest">{product.category}</span>
-                    <span className="text-slate-500 text-[10px] font-bold flex items-center gap-1 uppercase">
-                      <Zap size={10} className="text-yellow-500" /> {product.stock} stock
+                    <span className={`text-[10px] font-black flex items-center gap-1 uppercase ${product.stock > 0 ? 'text-slate-500' : 'text-red-500'}`}>
+                      {product.stock > 0 ? (
+                        <>
+                          <Zap size={10} className="text-yellow-500" /> {product.stock} Units Left
+                        </>
+                      ) : (
+                        <>
+                          <PackageX size={10} /> Sold Out
+                        </>
+                      )}
                     </span>
                   </div>
                   <h3 className="text-lg font-bold text-slate-200 group-hover:text-blue-400 transition-colors cursor-pointer" onClick={() => setSelectedProduct(product)}>{product.name}</h3>
                   <p className="text-slate-500 text-xs line-clamp-2">{product.description}</p>
                 </div>
 
-                <div className="pt-4 mt-auto flex items-center justify-between">
+                <div className="pt-4 mt-auto flex items-center justify-between border-t border-slate-800/30">
                   <div>
                     <span className="text-2xl font-black text-white">{product.price_dh}</span>
                     <span className="text-xs text-slate-500 ml-1 font-bold">DH</span>
                   </div>
                   <button 
+                    disabled={product.stock === 0}
                     onClick={(e) => { e.stopPropagation(); handleAddToCart(product); }}
-                    className="bg-blue-600 hover:bg-blue-500 text-white p-3 rounded-xl transition-all shadow-lg shadow-blue-600/20 group/btn"
+                    className={`p-3 rounded-xl transition-all shadow-lg flex items-center gap-2 ${product.stock > 0 ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/20 group/btn' : 'bg-slate-800 text-slate-600 cursor-not-allowed border border-slate-700'}`}
                   >
-                    <Plus size={20} className="group-hover/btn:rotate-90 transition-transform" />
+                    <Plus size={20} className={product.stock > 0 ? "group-hover/btn:rotate-90 transition-transform" : ""} />
                   </button>
                 </div>
               </div>
@@ -153,7 +235,10 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
                 </button>
                 
                 <div className="space-y-4">
-                  <h2 className="text-3xl font-black">{selectedProduct.name}</h2>
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-3xl font-black">{selectedProduct.name}</h2>
+                    {selectedProduct.stock === 0 && <span className="px-3 py-1 bg-red-500/10 text-red-500 text-[10px] font-black uppercase tracking-widest border border-red-500/20 rounded-full">Out of Stock</span>}
+                  </div>
                   <div className="flex items-center gap-6">
                     <div className="flex flex-col">
                       <span className="text-2xl font-black text-blue-400">{selectedProduct.price_dh} <span className="text-sm">DH</span></span>
@@ -171,30 +256,39 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
                 </div>
 
                 <div className="space-y-6">
-                  <div className="space-y-2">
-                    <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Select Quantity</span>
-                    <div className="flex items-center gap-4 bg-slate-900/50 border border-slate-800 w-fit p-1 rounded-2xl">
-                      <button 
-                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                        className="p-3 rounded-xl hover:bg-slate-800 text-slate-400 transition-all"
-                      >
-                        <Minus size={20} />
-                      </button>
-                      <span className="text-xl font-black w-8 text-center">{quantity}</span>
-                      <button 
-                        onClick={() => setQuantity(Math.min(selectedProduct.stock, quantity + 1))}
-                        className="p-3 rounded-xl hover:bg-slate-800 text-slate-400 transition-all"
-                      >
-                        <Plus size={20} />
-                      </button>
+                  {selectedProduct.stock > 0 && (
+                    <div className="space-y-2">
+                      <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Select Quantity</span>
+                      <div className="flex items-center gap-4 bg-slate-900/50 border border-slate-800 w-fit p-1 rounded-2xl">
+                        <button 
+                          onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                          className="p-3 rounded-xl hover:bg-slate-800 text-slate-400 transition-all"
+                        >
+                          <Minus size={20} />
+                        </button>
+                        <span className="text-xl font-black w-8 text-center">{quantity}</span>
+                        <button 
+                          onClick={() => setQuantity(Math.min(selectedProduct.stock, quantity + 1))}
+                          className="p-3 rounded-xl hover:bg-slate-800 text-slate-400 transition-all"
+                        >
+                          <Plus size={20} />
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   <button 
+                    disabled={selectedProduct.stock === 0}
                     onClick={() => handleAddToCart(selectedProduct, quantity)}
-                    className="w-full bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-3xl font-black transition-all shadow-xl shadow-blue-600/30 flex items-center justify-center gap-3"
+                    className={`w-full py-5 rounded-3xl font-black transition-all shadow-xl flex items-center justify-center gap-3 ${selectedProduct.stock > 0 ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/30' : 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'}`}
                   >
-                    <ShoppingCart size={22} /> Add to Cart — {(selectedProduct.price_dh * quantity).toFixed(2)} DH
+                    {selectedProduct.stock > 0 ? (
+                      <>
+                        <ShoppingCart size={22} /> Add to Cart — {(selectedProduct.price_dh * quantity).toFixed(2)} DH
+                      </>
+                    ) : (
+                      'Item Not Available'
+                    )}
                   </button>
                 </div>
 
@@ -214,7 +308,7 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
             <Search size={32} />
           </div>
           <p className="text-slate-500 font-medium">No products match your current filters.</p>
-          <button onClick={() => { setSearch(''); setActiveCategory('All'); }} className="text-blue-400 font-bold hover:underline">Clear all filters</button>
+          <button onClick={resetFilters} className="text-blue-400 font-bold hover:underline">Clear all filters</button>
         </div>
       )}
     </div>
