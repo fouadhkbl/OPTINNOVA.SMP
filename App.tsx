@@ -356,24 +356,32 @@ export default function App() {
     if (session) {
       const email = session.user.email || '';
       const userId = session.user.id;
-      const avatarUrl = session.user.user_metadata?.avatar_url || session.user.user_metadata?.picture;
+      
+      // EXHAUSTIVE METADATA CHECK: Discord and Google provide data differently
+      const meta = session.user.user_metadata || {};
+      const avatarUrl = meta.avatar_url || meta.picture || meta.avatar;
+      const displayName = meta.full_name || meta.name || meta.username || meta.preferred_username || email.split('@')[0];
       
       const skeleton: UserProfile = {
         id: userId,
         email: email,
-        username: session.user.user_metadata?.username || session.user.user_metadata?.full_name || email.split('@')[0] || 'Member',
+        username: displayName,
         wallet_balance: 0.00,
         discord_points: 0,
         role: 'user',
         avatar_url: avatarUrl
       };
+      
+      // Update state with skeleton immediately for best UX
       setUser(skeleton);
 
+      // Background sync with database profiles table
       const fullProfile = await fetchProfileDetails(userId, email);
-      // Merge full profile with session metadata for best data
+      
       setUser(prev => ({ 
         ...skeleton, 
         ...fullProfile, 
+        // Provider metadata usually contains fresher avatars than DB
         avatar_url: avatarUrl || fullProfile.avatar_url 
       }));
     } else {
@@ -386,10 +394,9 @@ export default function App() {
 
     const checkSession = async () => {
       try {
-        // Explicitly detect session in URL if HashRouter is being used
+        // Support HashRouter for Supabase OAuth parsing
         if (window.location.hash.includes('access_token=')) {
-          // Wait a tiny bit for Supabase library to auto-detect from hash
-          await new Promise(r => setTimeout(r, 500));
+          await new Promise(r => setTimeout(r, 600)); // Increased delay for slower providers
         }
 
         const { data: { session } } = await supabase.auth.getSession();
@@ -417,8 +424,8 @@ export default function App() {
           setUser(null);
         }
         
-        // Ensure loader is closed on any auth event (like redirect completion)
-        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'SIGNED_OUT') {
+        // Ensure loader is closed on any auth event
+        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') {
            setLoading(false);
         }
       }
@@ -429,7 +436,7 @@ export default function App() {
         console.warn("Auth check timed out, releasing loader");
         setLoading(false);
       }
-    }, 4000);
+    }, 4500);
 
     return () => {
       mounted = false;

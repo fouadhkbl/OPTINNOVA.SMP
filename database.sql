@@ -94,7 +94,7 @@ ALTER TABLE public.wallet_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.point_shop_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tournaments ENABLE ROW LEVEL SECURITY;
 
--- 9. Cleanup and Create Policies
+-- 9. Policies
 DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON public.profiles;
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 DROP POLICY IF EXISTS "Products are viewable by everyone" ON public.products;
@@ -111,21 +111,41 @@ CREATE POLICY "History viewable by owner" ON public.wallet_history FOR SELECT US
 CREATE POLICY "Points shop items viewable by everyone" ON public.point_shop_items FOR SELECT USING (true);
 CREATE POLICY "Tournaments viewable by everyone" ON public.tournaments FOR SELECT USING (true);
 
--- 10. Automatic Profile Creation Trigger
+-- 10. Automatic Profile Creation Trigger (FIXED FOR DISCORD/SOCIAL)
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
+DECLARE
+    username_val TEXT;
+    avatar_val TEXT;
 BEGIN
-    INSERT INTO public.profiles (id, email, username, role, discord_points, wallet_balance)
+    -- Extract username from metadata (Discord uses full_name or preferred_username)
+    username_val := COALESCE(
+        new.raw_user_meta_data->>'full_name', 
+        new.raw_user_meta_data->>'username', 
+        new.raw_user_meta_data->>'preferred_username',
+        split_part(new.email, '@', 1)
+    );
+    
+    -- Extract avatar from metadata (Discord uses avatar_url, Google uses picture)
+    avatar_val := COALESCE(
+        new.raw_user_meta_data->>'avatar_url',
+        new.raw_user_meta_data->>'picture'
+    );
+
+    INSERT INTO public.profiles (id, email, username, role, discord_points, wallet_balance, avatar_url)
     VALUES (
         new.id,
         new.email,
-        COALESCE(new.raw_user_meta_data->>'username', split_part(new.email, '@', 1)),
+        username_val,
         'user',
         0,
-        0.00
+        0.00,
+        avatar_val
     ) ON CONFLICT (id) DO UPDATE SET 
         email = EXCLUDED.email,
-        username = COALESCE(public.profiles.username, EXCLUDED.username);
+        username = COALESCE(public.profiles.username, EXCLUDED.username),
+        avatar_url = COALESCE(EXCLUDED.avatar_url, public.profiles.avatar_url);
+        
     RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
