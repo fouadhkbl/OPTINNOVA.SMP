@@ -1,17 +1,39 @@
-
-import { supabase } from './lib/supabase';
-import { UserProfile, CartItem } from './types';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { 
+  BrowserRouter as Router, 
+  Routes, 
+  Route, 
+  Link, 
+  useNavigate, 
+  useLocation, 
+  Navigate 
+} from 'react-router-dom';
+import { 
+  Home, 
+  ShoppingBag, 
+  Trophy, 
+  Store, 
+  Lock, 
+  ShoppingCart, 
+  User, 
+  LogOut, 
+  X, 
+  Trash2, 
+  Loader2 
+} from 'lucide-react';
+import { supabase } from './lib/supabase.ts';
+import { UserProfile, CartItem } from './types.ts';
 import { LOGO_URL, APP_NAME } from './constants.tsx';
 
 // Pages
-import HomePage from './pages/HomePage';
-import ShopPage from './pages/ShopPage';
-import TournamentPage from './pages/TournamentPage';
-import ProfilePage from './pages/ProfilePage';
-import AdminPage from './pages/AdminPage';
-import PointShopPage from './pages/PointShopPage';
-import LoginPage from './pages/LoginPage';
-import SignUpPage from './pages/SignUpPage';
+import HomePage from './pages/HomePage.tsx';
+import ShopPage from './pages/ShopPage.tsx';
+import TournamentPage from './pages/TournamentPage.tsx';
+import ProfilePage from './pages/ProfilePage.tsx';
+import AdminPage from './pages/AdminPage.tsx';
+import PointShopPage from './pages/PointShopPage.tsx';
+import LoginPage from './pages/LoginPage.tsx';
+import SignUpPage from './pages/SignUpPage.tsx';
 
 const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, setUser: any, cart: CartItem[], setCart: any }) => {
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -24,17 +46,18 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
     if (isLoggingOut) return;
     setIsLoggingOut(true);
     try {
-      setUser(null);
       await supabase.auth.signOut();
-      window.location.href = window.location.origin + window.location.pathname;
+      setUser(null);
+      navigate('/login');
     } catch (e) {
       console.error("Logout failed", e);
+    } finally {
       setIsLoggingOut(false);
     }
   };
 
   const navItems = [
-    { label: 'Home', icon: HomeIcon, path: '/' },
+    { label: 'Home', icon: Home, path: '/' },
     { label: 'Shop', icon: ShoppingBag, path: '/shop' },
     { label: 'Tournaments', icon: Trophy, path: '/tournaments' },
     { label: 'Points Store', icon: Store, path: '/points' },
@@ -48,16 +71,11 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
   };
 
   const handleCheckout = async () => {
-    if (!user) {
-      navigate('/login');
-      setIsCartOpen(false);
-      return;
-    }
-
+    if (!user) { navigate('/login'); setIsCartOpen(false); return; }
     if (user.wallet_balance < cartTotal) {
-      alert(`Insufficient balance! Top up in your profile.`);
-      setIsCartOpen(false);
+      alert(`Insufficient balance!`);
       navigate('/profile');
+      setIsCartOpen(false);
       return;
     }
 
@@ -65,7 +83,6 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
     setIsCheckingOut(true);
 
     try {
-      // ATOMIC BACKEND CHECKOUT: This re-validates price, stock, and balance in one SQL transaction
       const { data, error } = await supabase.rpc('process_checkout', {
         cart_items: cart.map(item => ({ id: item.id, quantity: item.quantity }))
       });
@@ -73,16 +90,18 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
       if (error) throw error;
 
       if (data?.success) {
-        // Sync local profile state with the result of the backend transaction
-        setUser((prev: any) => prev ? { ...prev, wallet_balance: data.new_balance, discord_points: (Number(prev.discord_points) || 0) + data.points_earned } : null);
+        setUser((prev: any) => prev ? { 
+          ...prev, 
+          wallet_balance: data.new_balance, 
+          discord_points: (Number(prev.discord_points) || 0) + data.points_earned 
+        } : null);
         setCart([]);
         setIsCartOpen(false);
-        alert("Success! Your items are now available in your profile.");
+        alert("Success! Check your profile.");
         navigate('/profile');
       }
     } catch (err: any) {
-      console.error("Checkout failed:", err);
-      alert(err.message || "An unexpected error occurred during checkout.");
+      alert(err.message || "Checkout failed");
     } finally {
       setIsCheckingOut(false);
     }
@@ -93,7 +112,7 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
       <nav className="sticky top-0 z-50 glass border-b border-slate-800/50 px-4 md:px-8 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3 group">
-            <img src={LOGO_URL} alt="Moon Night Logo" className="w-10 h-10 object-contain rounded-full" />
+            <img src={LOGO_URL} alt="Logo" className="w-10 h-10 object-contain rounded-full" />
             <span className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-600">
               {APP_NAME}
             </span>
@@ -108,8 +127,7 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
             ))}
             {user?.role === 'admin' && (
                <Link to="/admin" className="flex items-center gap-2 text-red-400 hover:text-red-300 transition-all font-bold text-xs uppercase tracking-widest">
-                <Lock size={16} />
-                Admin
+                <Lock size={16} /> Admin
               </Link>
             )}
           </div>
@@ -130,10 +148,10 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
                   <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest">Balance</span>
                   <span className="text-sm font-black text-blue-400">{user.wallet_balance?.toFixed(2)} DH</span>
                 </Link>
-                <Link to="/profile" className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center overflow-hidden border border-slate-700">
+                <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center overflow-hidden">
                   {user.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" /> : <User size={16} />}
-                </Link>
-                <button onClick={handleLogout} disabled={isLoggingOut} className="text-slate-500 hover:text-red-400">
+                </div>
+                <button onClick={handleLogout} className="text-slate-500 hover:text-red-400">
                   {isLoggingOut ? <Loader2 size={20} className="animate-spin" /> : <LogOut size={20} />}
                 </button>
               </div>
@@ -152,23 +170,23 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]" onClick={() => setIsCartOpen(false)}></div>
           <div className="fixed top-0 right-0 bottom-0 w-full sm:max-w-sm glass border-l border-slate-800 z-[70] p-8 flex flex-col animate-in slide-in-from-right">
             <div className="flex items-center justify-between mb-8">
-              <h2 className="text-2xl font-black flex items-center gap-3 tracking-tight">Cart</h2>
-              <button onClick={() => setIsCartOpen(false)} className="hover:rotate-90 transition-transform"><X size={24} /></button>
+              <h2 className="text-2xl font-black">Cart</h2>
+              <button onClick={() => setIsCartOpen(false)}><X size={24} /></button>
             </div>
 
-            <div className="flex-grow overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+            <div className="flex-grow overflow-y-auto space-y-4 custom-scrollbar">
               {cart.length === 0 ? (
                 <div className="text-center py-20 opacity-30">
                   <ShoppingCart size={48} className="mx-auto mb-4" />
-                  <p className="font-black text-xs uppercase tracking-widest">Your cart is empty</p>
+                  <p className="font-black text-xs uppercase tracking-widest">Cart is empty</p>
                 </div>
               ) : cart.map(item => (
                 <div key={item.id} className="p-4 rounded-2xl bg-slate-900/50 border border-slate-800 flex items-center gap-4">
                   <div className="flex-grow">
-                    <h4 className="font-bold text-sm text-slate-200">{item.name}</h4>
-                    <p className="text-blue-400 font-black text-xs">{item.price_dh} DH × {item.quantity}</p>
+                    <h4 className="font-bold text-sm">{item.name}</h4>
+                    <p className="text-blue-400 font-black text-xs">{item.price_dh} DH</p>
                   </div>
-                  <button onClick={() => removeFromCart(item.id)} className="text-slate-600 hover:text-red-400 transition-colors"><Trash2 size={18} /></button>
+                  <button onClick={() => removeFromCart(item.id)} className="text-slate-600 hover:text-red-400"><Trash2 size={18} /></button>
                 </div>
               ))}
             </div>
@@ -182,9 +200,9 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
                 <button 
                   disabled={isCheckingOut} 
                   onClick={handleCheckout} 
-                  className="w-full bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-3xl font-black uppercase tracking-widest transition-all flex items-center justify-center gap-3 shadow-xl shadow-blue-600/20 disabled:opacity-50"
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white py-5 rounded-3xl font-black uppercase tracking-widest disabled:opacity-50"
                 >
-                  {isCheckingOut ? <Loader2 className="animate-spin" /> : 'Confirm Order'}
+                  {isCheckingOut ? <Loader2 className="animate-spin mx-auto" /> : 'Confirm Order'}
                 </button>
               </div>
             )}
@@ -223,15 +241,15 @@ export default function App() {
 
   const updateAuthState = useCallback(async (session: any) => {
     if (session?.user) {
-      // SECURE: Strictly fetch only necessary profile fields
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .single();
-      
-      if (!error && profile) {
-        setUser(profile);
+      try {
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        if (!error && profile) setUser(profile);
+      } catch (e) {
+        console.error("Profile fetch error:", e);
       }
     } else {
       setUser(null);
@@ -243,6 +261,12 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       updateAuthState(session);
     });
+    
+    // Initial check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      updateAuthState(session);
+    });
+
     return () => subscription.unsubscribe();
   }, [updateAuthState]);
 
