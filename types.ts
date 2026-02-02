@@ -20,7 +20,6 @@ export interface Product {
   stock: number;
   image_url?: string;
   type: 'account' | 'key' | 'service';
-  // secret_content is used to store account details or license keys for automatic delivery
   secret_content?: string;
 }
 
@@ -28,12 +27,12 @@ export interface CartItem extends Product {
   quantity: number;
 }
 
-export interface PointShopItem {
+export interface Message {
   id: string;
-  name: string;
-  description: string;
-  cost_points: number;
-  image_url?: string;
+  order_id: string;
+  sender_id: string;
+  content: string;
+  created_at: string;
 }
 
 export interface Order {
@@ -43,8 +42,17 @@ export interface Order {
   status: OrderStatus;
   price_paid: number;
   points_earned: number;
+  delivery_data: string;
   created_at: string;
-  product?: Product;
+  products?: Product;
+}
+
+export interface PointShopItem {
+  id: string;
+  name: string;
+  description: string;
+  cost_points: number;
+  image_url?: string;
 }
 
 export interface Tournament {

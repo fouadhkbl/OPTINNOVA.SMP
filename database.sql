@@ -1,5 +1,5 @@
 
--- MOON NIGHT DIGITAL SHOP - DATABASE SCHEMA (COMPLETE)
+-- MOON NIGHT DIGITAL SHOP - DATABASE SCHEMA (ROBUST VERSION)
 
 -- 1. Create custom types
 DO $$ 
@@ -54,7 +54,16 @@ CREATE TABLE IF NOT EXISTS public.orders (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 5. Wallet History Table
+-- 5. Messages Table
+CREATE TABLE IF NOT EXISTS public.messages (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    order_id UUID REFERENCES public.orders(id) ON DELETE CASCADE NOT NULL,
+    sender_id UUID REFERENCES public.profiles(id) NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- 6. Wallet History Table
 CREATE TABLE IF NOT EXISTS public.wallet_history (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     user_id UUID REFERENCES public.profiles(id) NOT NULL,
@@ -64,7 +73,7 @@ CREATE TABLE IF NOT EXISTS public.wallet_history (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 6. Point Shop Items Table
+-- 7. Point Shop Items Table
 CREATE TABLE IF NOT EXISTS public.point_shop_items (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     name TEXT NOT NULL,
@@ -74,78 +83,73 @@ CREATE TABLE IF NOT EXISTS public.point_shop_items (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 7. Tournaments Table
-CREATE TABLE IF NOT EXISTS public.tournaments (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    title TEXT NOT NULL,
-    description TEXT,
-    role_required TEXT,
-    prize_pool TEXT,
-    status TEXT CHECK (status IN ('upcoming', 'ongoing', 'finished')) DEFAULT 'upcoming',
-    tournament_date TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
-);
-
 -- 8. Enable RLS
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wallet_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.point_shop_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.tournaments ENABLE ROW LEVEL SECURITY;
 
--- 9. Policies
+-- 9. Policies (Fixed with DROP IF EXISTS)
 DROP POLICY IF EXISTS "Public profiles are viewable by everyone" ON public.profiles;
-DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
-DROP POLICY IF EXISTS "Products are viewable by everyone" ON public.products;
-DROP POLICY IF EXISTS "Orders are viewable by owner" ON public.orders;
-DROP POLICY IF EXISTS "History viewable by owner" ON public.wallet_history;
-DROP POLICY IF EXISTS "Points shop items viewable by everyone" ON public.point_shop_items;
-DROP POLICY IF EXISTS "Tournaments viewable by everyone" ON public.tournaments;
-
 CREATE POLICY "Public profiles are viewable by everyone" ON public.profiles FOR SELECT USING (true);
-CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
-CREATE POLICY "Products are viewable by everyone" ON public.products FOR SELECT USING (true);
-CREATE POLICY "Orders are viewable by owner" ON public.orders FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "History viewable by owner" ON public.wallet_history FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Points shop items viewable by everyone" ON public.point_shop_items FOR SELECT USING (true);
-CREATE POLICY "Tournaments viewable by everyone" ON public.tournaments FOR SELECT USING (true);
 
--- 10. Automatic Profile Creation Trigger (FIXED FOR DISCORD/SOCIAL)
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Products are viewable by everyone" ON public.products;
+CREATE POLICY "Products are viewable by everyone" ON public.products FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Orders are viewable by owner" ON public.orders;
+CREATE POLICY "Orders are viewable by owner" ON public.orders FOR SELECT USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Admins can see all orders" ON public.orders;
+CREATE POLICY "Admins can see all orders" ON public.orders FOR SELECT USING (
+  EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+);
+
+DROP POLICY IF EXISTS "Admins can update orders" ON public.orders;
+CREATE POLICY "Admins can update orders" ON public.orders FOR UPDATE USING (
+  EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+);
+
+-- Message Policies
+DROP POLICY IF EXISTS "Users can see messages for their orders" ON public.messages;
+CREATE POLICY "Users can see messages for their orders" ON public.messages FOR SELECT USING (
+  EXISTS (SELECT 1 FROM public.orders WHERE id = order_id AND user_id = auth.uid()) OR
+  EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+);
+
+DROP POLICY IF EXISTS "Users can send messages to their orders" ON public.messages;
+CREATE POLICY "Users can send messages to their orders" ON public.messages FOR INSERT WITH CHECK (
+  EXISTS (SELECT 1 FROM public.orders WHERE id = order_id AND user_id = auth.uid()) OR
+  EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role = 'admin')
+);
+
+DROP POLICY IF EXISTS "History viewable by owner" ON public.wallet_history;
+CREATE POLICY "History viewable by owner" ON public.wallet_history FOR SELECT USING (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Points shop items viewable by everyone" ON public.point_shop_items;
+CREATE POLICY "Points shop items viewable by everyone" ON public.point_shop_items FOR SELECT USING (true);
+
+-- 10. Trigger
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
-DECLARE
-    username_val TEXT;
-    avatar_val TEXT;
 BEGIN
-    -- Extract username from metadata (Discord uses full_name or preferred_username)
-    username_val := COALESCE(
-        new.raw_user_meta_data->>'full_name', 
-        new.raw_user_meta_data->>'username', 
-        new.raw_user_meta_data->>'preferred_username',
-        split_part(new.email, '@', 1)
-    );
-    
-    -- Extract avatar from metadata (Discord uses avatar_url, Google uses picture)
-    avatar_val := COALESCE(
-        new.raw_user_meta_data->>'avatar_url',
-        new.raw_user_meta_data->>'picture'
-    );
-
     INSERT INTO public.profiles (id, email, username, role, discord_points, wallet_balance, avatar_url)
     VALUES (
         new.id,
         new.email,
-        username_val,
+        COALESCE(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'username', split_part(new.email, '@', 1)),
         'user',
         0,
         0.00,
-        avatar_val
-    ) ON CONFLICT (id) DO UPDATE SET 
+        COALESCE(new.raw_user_meta_data->>'avatar_url', new.raw_user_meta_data->>'picture')
+    ) ON CONFLICT (id) DO UPDATE SET
         email = EXCLUDED.email,
         username = COALESCE(public.profiles.username, EXCLUDED.username),
         avatar_url = COALESCE(EXCLUDED.avatar_url, public.profiles.avatar_url);
-        
     RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
