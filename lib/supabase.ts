@@ -1,55 +1,87 @@
 
-import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://hktlxghjronjommqkwum.supabase.co';
-// Using the provided key format. 
-const supabaseKey = 'sb_publishable_XoWmh7zOIP-Edh7_kRcgpg_AkmkvxBB';
+import { createClient, PostgrestError } from '@supabase/supabase-js';
 
-export const supabase = createClient(supabaseUrl, supabaseKey, {
+/**
+ * Supabase configuration using Vite environment variables.
+ * VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be defined in your .env file.
+ */
+// Fix: Use type assertion on import.meta to resolve "Property 'env' does not exist on type 'ImportMeta'"
+const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
+const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.warn(
+    "Supabase credentials missing. Ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set in your environment."
+  );
+}
+
+export const supabase = createClient(supabaseUrl || '', supabaseKey || '', {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    storageKey: 'moon-night-auth-session'
+    storageKey: 'moon-night-auth-session',
   },
   global: {
-    // Add a small fetch timeout/retry logic internally via headers if needed, 
-    // but primarily ensuring requests aren't pre-emptively aborted.
-    headers: { 'x-application-name': 'moon-night-shop' }
-  }
+    headers: { 'x-application-name': 'moon-night-shop' },
+  },
 });
 
 /**
- * Safely executes a Supabase query with error handling for AbortErrors
- * and common connectivity issues.
+ * Type definition for the result of a safeQuery execution.
  */
-// Fix: changed queryPromise type from Promise to any to support Supabase query builders which are "thenable"
-export const safeQuery = async <T>(queryPromise: any) => {
+export interface SafeQueryResult<T> {
+  data: T | null;
+  error: string | 'aborted' | null;
+}
+
+/**
+ * Safely executes a Supabase query with robust error handling.
+ * Categorizes AbortErrors (common in React) separately from true database errors.
+ * 
+ * @param queryPromise - A Supabase query builder or Promise-like object.
+ * @returns A standardized SafeQueryResult object.
+ */
+export const safeQuery = async <T>(
+  queryPromise: PromiseLike<{ data: T | null; error: PostgrestError | null }>
+): Promise<SafeQueryResult<T>> => {
   try {
-    const result = await queryPromise;
-    if (result.error) throw result.error;
-    return { data: result.data as T | null, error: null };
-  } catch (err: any) {
-    // Silently handle AbortError as it's usually just a component unmounting
-    if (err.name === 'AbortError' || err.message?.includes('aborted')) {
-      console.warn("Query was aborted safely.");
-      return { data: null, error: 'aborted' };
+    const { data, error } = await queryPromise;
+    if (error) throw error;
+    return { data, error: null };
+  } catch (err: unknown) {
+    if (err instanceof Error) {
+      if (err.name === 'AbortError' || err.message?.includes('aborted')) {
+        return { data: null, error: 'aborted' };
+      }
+      return { data: null, error: err.message || 'An unexpected database error occurred.' };
     }
-    return { data: null, error: err.message || "Unknown database error" };
+    return { data: null, error: 'An unknown error occurred during the database operation.' };
   }
 };
 
-export const testSupabaseConnection = async () => {
+/**
+ * Checks the health of the Supabase connection.
+ * Useful for diagnostics and pre-flight application checks.
+ */
+export const testSupabaseConnection = async (): Promise<{ success: boolean; message: string }> => {
   try {
     const { error, status } = await supabase.from('products').select('id').limit(1);
+    
     if (error) {
       if (status === 401 || status === 403) {
-        return { success: false, message: "Authentication Error: API Key might be invalid or restricted." };
+        return { 
+          success: false, 
+          message: 'Authentication Restricted: Check your Supabase API keys and RLS policies.' 
+        };
       }
-      return { success: false, message: error.message };
+      return { success: false, message: `Database Sync Failed: ${error.message}` };
     }
-    return { success: true, message: "Connection stable." };
-  } catch (err: any) {
-    return { success: false, message: err.message };
+    
+    return { success: true, message: 'Supabase connection established and stable.' };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown network failure.';
+    return { success: false, message: `System Error: ${message}` };
   }
 };
