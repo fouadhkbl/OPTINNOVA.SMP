@@ -1,0 +1,8 @@
+{
+  "name": "Moon Night Digital Shop",
+  "description": "A premium dark-blue themed digital e-commerce platform for accounts and keys, featuring wallet management, point systems, and tournament tracking.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
