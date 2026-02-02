@@ -1,38 +1,62 @@
 
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Chrome, MessageSquare, ArrowRight, ShieldCheck } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { Mail, Chrome, MessageSquare, ArrowRight, ShieldCheck, AlertCircle, RefreshCw } from 'lucide-react';
+import { supabase, testSupabaseConnection } from '../lib/supabase';
 import { LOGO_URL } from '../constants.tsx';
 
 export default function LoginPage({ setUser }: { setUser: any }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  const runDiagnostics = async () => {
+    setDiagLoading(true);
+    const result = await testSupabaseConnection();
+    if (result.success) {
+      alert("✅ Connection looks good! If login still fails, check your email/password or Auth providers in Supabase.");
+    } else {
+      setErrorMessage(`Diagnostic Alert: ${result.message}. This usually means your Supabase Key or URL is incorrect.`);
+    }
+    setDiagLoading(false);
+  };
 
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setErrorMessage(null);
     
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    
-    if (error) {
-      alert(error.message);
-    } else if (data.user) {
-      navigate('/');
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      
+      if (error) {
+        setErrorMessage(error.message);
+      } else if (data.user) {
+        navigate('/');
+      }
+    } catch (err: any) {
+      setErrorMessage("System Error: " + (err.message || "Unknown error"));
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleSocialLogin = async (provider: 'google' | 'discord') => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: window.location.origin,
-      },
-    });
-    if (error) alert(error.message);
+    setErrorMessage(null);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: window.location.origin,
+        },
+      });
+      if (error) throw error;
+    } catch (err: any) {
+      setErrorMessage(`${provider} Auth failed: ${err.message}. Ensure social login is enabled in Supabase and Redirect URLs are whitelisted.`);
+    }
   };
 
   return (
@@ -47,6 +71,24 @@ export default function LoginPage({ setUser }: { setUser: any }) {
       </div>
 
       <div className="glass rounded-[2.5rem] p-8 md:p-10 border border-slate-800 space-y-8">
+        {errorMessage && (
+          <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex flex-col gap-3 text-red-400 text-sm animate-in fade-in zoom-in-95">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="shrink-0 mt-0.5" size={18} />
+              <div className="space-y-1">
+                <p className="font-bold">Authentication Problem</p>
+                <p className="text-xs opacity-80 leading-relaxed">{errorMessage}</p>
+              </div>
+            </div>
+            <button 
+              onClick={runDiagnostics}
+              className="text-[10px] font-black uppercase tracking-widest text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1.5 self-end"
+            >
+              {diagLoading ? <RefreshCw size={10} className="animate-spin"/> : 'Run Diagnostics'}
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 gap-4">
           <button 
             onClick={() => handleSocialLogin('discord')} 
@@ -121,12 +163,6 @@ export default function LoginPage({ setUser }: { setUser: any }) {
             </Link>
           </p>
         </div>
-      </div>
-
-      <div className="text-center">
-        <p className="text-slate-600 text-sm font-medium">
-          Trusted by 7,000+ Discord members.
-        </p>
       </div>
     </div>
   );

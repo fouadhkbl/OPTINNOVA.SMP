@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Chrome, MessageSquare, ArrowRight, ShieldCheck, User } from 'lucide-react';
+import { Mail, Chrome, MessageSquare, ArrowRight, ShieldCheck, User, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { LOGO_URL } from '../constants.tsx';
 
@@ -10,45 +10,60 @@ export default function SignUpPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setErrorMessage(null);
     
-    // Pass the username in user_metadata so the Supabase trigger captures it correctly
-    const { data, error } = await supabase.auth.signUp({ 
-      email, 
-      password,
-      options: {
-        data: {
-          username: username,
+    try {
+      // Use raw_user_meta_data to pass username to the Supabase trigger
+      const { data, error } = await supabase.auth.signUp({ 
+        email, 
+        password,
+        options: {
+          data: {
+            username: username,
+            full_name: username, // Redundancy for standard metadata keys
+          }
+        }
+      });
+      
+      if (error) {
+        setErrorMessage(error.message);
+      } else if (data.user) {
+        // If email confirmation is off, data.session exists immediately
+        if (data.session) {
+          alert("Welcome to Moon Night! Your account is ready.");
+          navigate('/');
+        } else {
+          // If email confirmation is on (Supabase default)
+          alert("Verification required! Please click the link sent to " + email + " to activate your account.");
+          navigate('/login');
         }
       }
-    });
-    
-    if (error) {
-      alert(error.message);
-    } else if (data.user) {
-      if (data.session) {
-        alert("Account created successfully!");
-        navigate('/');
-      } else {
-        alert("Account created! Please check your email for a verification link.");
-        navigate('/login');
-      }
+    } catch (err: any) {
+      setErrorMessage("Signup Exception: " + err.message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleSocialLogin = async (provider: 'google' | 'discord') => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: window.location.origin,
-      },
-    });
-    if (error) alert(error.message);
+    setErrorMessage(null);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: window.location.origin,
+        },
+      });
+      if (error) throw error;
+    } catch (err: any) {
+      setErrorMessage(`${provider} Auth Error: ${err.message}`);
+    }
   };
 
   return (
@@ -63,6 +78,16 @@ export default function SignUpPage() {
       </div>
 
       <div className="glass rounded-[2.5rem] p-8 md:p-10 border border-slate-800 space-y-8">
+        {errorMessage && (
+          <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-start gap-3 text-red-400 text-sm animate-in fade-in zoom-in-95">
+            <AlertCircle className="shrink-0 mt-0.5" size={18} />
+            <div className="space-y-1">
+              <p className="font-bold">Registration Problem</p>
+              <p className="text-xs opacity-80">{errorMessage}</p>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 gap-4">
           <button 
             onClick={() => handleSocialLogin('discord')} 
@@ -154,12 +179,6 @@ export default function SignUpPage() {
             </Link>
           </p>
         </div>
-      </div>
-
-      <div className="text-center">
-        <p className="text-slate-600 text-sm font-medium">
-          The moon is rising. Welcome to the elite.
-        </p>
       </div>
     </div>
   );
