@@ -1,18 +1,19 @@
 
 import React, { useState, useEffect } from 'react';
-import { ShoppingCart, Search, Zap, Shield, Plus, Minus, X, CheckCircle, Filter, SlidersHorizontal, PackageCheck, PackageX, Tag } from 'lucide-react';
+import { ShoppingCart, Search, Zap, Shield, Plus, Minus, X, CheckCircle, Filter, SlidersHorizontal, PackageCheck, PackageX, Tag, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Product, UserProfile, CartItem } from '../types';
 import { supabase } from '../lib/supabase';
 
 export default function ShopPage({ user, cart, setCart }: { user: UserProfile | null, cart: CartItem[], setCart: any }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState(1);
 
-  // New Filters
+  // Filters
   const [showFilters, setShowFilters] = useState(false);
   const [filterType, setFilterType] = useState<string>('All');
   const [filterStock, setFilterStock] = useState<'All' | 'In Stock' | 'Out of Stock'>('All');
@@ -25,11 +26,24 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
 
   const fetchProducts = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('products').select('*').order('created_at', { ascending: false });
-    if (!error && data) {
-      setProducts(data);
+    setError(null);
+    try {
+      const { data, error: supabaseError } = await supabase
+        .from('products')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (supabaseError) throw supabaseError;
+      
+      if (data) {
+        setProducts(data);
+      }
+    } catch (err: any) {
+      console.error("Shop fetch error:", err);
+      setError(err.message || "Failed to connect to database. Check your API configuration.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const categories = ['All', ...Array.from(new Set(products.map(p => p.category)))];
@@ -92,7 +106,6 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
         </div>
       </div>
 
-      {/* Advanced Filter Bar */}
       {showFilters && (
         <div className="glass p-6 rounded-[2rem] border border-slate-800 animate-in slide-in-from-top-4 duration-500 space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -151,7 +164,20 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
         </div>
       )}
 
-      {loading ? (
+      {error ? (
+        <div className="flex flex-col items-center justify-center py-20 glass rounded-[3rem] border border-red-500/20 space-y-6">
+           <div className="w-16 h-16 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500">
+              <AlertTriangle size={32} />
+           </div>
+           <div className="text-center space-y-2">
+              <h3 className="text-xl font-black text-white">Database Sync Failed</h3>
+              <p className="text-slate-500 text-sm max-w-md mx-auto">{error}</p>
+           </div>
+           <button onClick={fetchProducts} className="flex items-center gap-2 bg-slate-900 border border-slate-800 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-blue-400 hover:text-blue-300 transition-all">
+             <RefreshCw size={14} /> Retry Connection
+           </button>
+        </div>
+      ) : loading ? (
         <div className="flex justify-center py-20">
           <div className="w-12 h-12 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
         </div>
@@ -302,7 +328,7 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
         </>
       )}
 
-      {!loading && filteredProducts.length === 0 && (
+      {!loading && !error && filteredProducts.length === 0 && (
         <div className="text-center py-24 space-y-4">
           <div className="w-20 h-20 bg-slate-900/50 rounded-full flex items-center justify-center mx-auto text-slate-700 border border-slate-800">
             <Search size={32} />

@@ -22,7 +22,7 @@ import {
   Loader2,
   CheckCircle2
 } from 'lucide-react';
-import { supabase } from './lib/supabase';
+import { supabase, testSupabaseConnection } from './lib/supabase';
 import { UserProfile, CartItem, Product } from './types';
 import { LOGO_URL, APP_NAME, DISCORD_LINK, ADMIN_PASSWORD } from './constants.tsx';
 
@@ -274,7 +274,6 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/login" element={<LoginPage setUser={setUser} />} />
           <Route path="/signup" element={<SignUpPage />} />
-          {/* Catch-all route to handle redirects and invalid hashes from Supabase OAuth */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
@@ -338,18 +337,11 @@ export default function App() {
         .single();
       
       if (profile) return profile as UserProfile;
-    } catch (e) {
-      console.warn("Profile detail fetch failed, using skeleton", e);
+    } catch (e: any) {
+      console.warn("Profile detail fetch failed. This is expected for brand new users until trigger completes.", e.message);
     }
     
-    return {
-      id: userId,
-      email: email,
-      username: email.split('@')[0] || 'Member',
-      wallet_balance: 0.00,
-      discord_points: 0,
-      role: 'user'
-    } as UserProfile;
+    return null;
   }, []);
 
   const updateAuthState = useCallback(async (session: any) => {
@@ -357,7 +349,6 @@ export default function App() {
       const email = session.user.email || '';
       const userId = session.user.id;
       
-      // EXHAUSTIVE METADATA CHECK: Discord and Google provide data differently
       const meta = session.user.user_metadata || {};
       const avatarUrl = meta.avatar_url || meta.picture || meta.avatar;
       const displayName = meta.full_name || meta.name || meta.username || meta.preferred_username || email.split('@')[0];
@@ -372,18 +363,19 @@ export default function App() {
         avatar_url: avatarUrl
       };
       
-      // Update state with skeleton immediately for best UX
+      // Step 1: Initial UI update
       setUser(skeleton);
 
-      // Background sync with database profiles table
+      // Step 2: Background sync
       const fullProfile = await fetchProfileDetails(userId, email);
       
-      setUser(prev => ({ 
-        ...skeleton, 
-        ...fullProfile, 
-        // Provider metadata usually contains fresher avatars than DB
-        avatar_url: avatarUrl || fullProfile.avatar_url 
-      }));
+      if (fullProfile) {
+        setUser(prev => ({ 
+          ...skeleton, 
+          ...fullProfile, 
+          avatar_url: avatarUrl || fullProfile.avatar_url 
+        }));
+      }
     } else {
       setUser(null);
     }
@@ -392,11 +384,11 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
 
-    const checkSession = async () => {
+    const initialize = async () => {
       try {
-        // Support HashRouter for Supabase OAuth parsing
+        // RESILIENCE: Wait briefly for Supabase to parse OAuth tokens from hash if present
         if (window.location.hash.includes('access_token=')) {
-          await new Promise(r => setTimeout(r, 600)); // Increased delay for slower providers
+          await new Promise(r => setTimeout(r, 800));
         }
 
         const { data: { session } } = await supabase.auth.getSession();
@@ -406,7 +398,7 @@ export default function App() {
           }
         }
       } catch (err) {
-        console.error("Auth session check failed", err);
+        console.error("Initialization error:", err);
       } finally {
         if (mounted) {
           setLoading(false);
@@ -414,7 +406,7 @@ export default function App() {
       }
     };
 
-    checkSession();
+    initialize();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (mounted) {
@@ -424,24 +416,15 @@ export default function App() {
           setUser(null);
         }
         
-        // Ensure loader is closed on any auth event
-        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED') {
+        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
            setLoading(false);
         }
       }
     });
 
-    const safetyTimeout = setTimeout(() => {
-      if (mounted && loading) {
-        console.warn("Auth check timed out, releasing loader");
-        setLoading(false);
-      }
-    }, 4500);
-
     return () => {
       mounted = false;
       subscription.unsubscribe();
-      clearTimeout(safetyTimeout);
     };
   }, [updateAuthState]);
 
