@@ -1,8 +1,7 @@
-
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Chrome, MessageSquare, ArrowRight, ShieldCheck, User, AlertCircle, Loader2 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { Mail, Chrome, MessageSquare, ArrowRight, ShieldCheck, User, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { supabase, testSupabaseConnection } from '../lib/supabase.ts';
 import { LOGO_URL } from '../constants.tsx';
 
 export default function SignUpPage() {
@@ -10,11 +9,30 @@ export default function SignUpPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [diagLoading, setDiagLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const navigate = useNavigate();
+
+  const runDiagnostics = async () => {
+    setDiagLoading(true);
+    const result = await testSupabaseConnection();
+    if (result.success) {
+      alert("✅ Connection is stable. If errors persist, check your project credentials.");
+    } else {
+      setErrorMessage(`Diagnostic Alert: ${result.message}. Please ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are correctly configured.`);
+    }
+    setDiagLoading(false);
+  };
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (loading) return;
+
+    if (password.length < 6) {
+      setErrorMessage("Password must be at least 6 characters.");
+      return;
+    }
+
     setLoading(true);
     setErrorMessage(null);
     
@@ -31,7 +49,11 @@ export default function SignUpPage() {
       });
       
       if (error) {
-        setErrorMessage(error.message);
+        if (error.message.includes('fetch')) {
+          setErrorMessage("Failed to fetch: Unable to connect to authentication server. Please check your internet or database configuration.");
+        } else {
+          setErrorMessage(error.message);
+        }
         setLoading(false);
       } else if (data.user) {
         if (data.session) {
@@ -39,11 +61,11 @@ export default function SignUpPage() {
           window.location.href = window.location.origin + window.location.pathname;
         } else {
           alert("Success! Check your email to verify your account.");
-          window.location.href = window.location.origin + window.location.pathname + '#/login';
+          navigate('/login');
         }
       }
     } catch (err: any) {
-      setErrorMessage("Error: " + err.message);
+      setErrorMessage("System Error: " + err.message);
       setLoading(false);
     }
   };
@@ -74,12 +96,20 @@ export default function SignUpPage() {
 
       <div className="glass rounded-[2.5rem] p-8 md:p-10 border border-slate-800 space-y-8">
         {errorMessage && (
-          <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-start gap-3 text-red-400 text-sm animate-in fade-in zoom-in-95">
-            <AlertCircle className="shrink-0 mt-0.5" size={18} />
-            <div className="space-y-1">
-              <p className="font-bold">Signup Problem</p>
-              <p className="text-xs opacity-80">{errorMessage}</p>
+          <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex flex-col gap-3 text-red-400 text-sm animate-in fade-in zoom-in-95">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="shrink-0 mt-0.5" size={18} />
+              <div className="space-y-1">
+                <p className="font-bold">Signup Problem</p>
+                <p className="text-xs opacity-80 leading-relaxed">{errorMessage}</p>
+              </div>
             </div>
+            <button 
+              onClick={runDiagnostics}
+              className="text-[10px] font-black uppercase tracking-widest text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1.5 self-end"
+            >
+              {diagLoading ? <Loader2 size={10} className="animate-spin"/> : <><RefreshCw size={10} /> Run Connection Diagnostic</>}
+            </button>
           </div>
         )}
 
