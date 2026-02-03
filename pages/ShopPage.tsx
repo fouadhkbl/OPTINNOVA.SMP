@@ -290,7 +290,17 @@ export default function ShopPage({ user, cart, setCart }: { user: UserProfile | 
                         >
                           <Minus size={20} />
                         </button>
-                        <span className="text-xl font-black w-8 text-center">{quantity}</span>
+                        <input 
+                          type="number" 
+                          className="w-12 bg-transparent text-center text-xl font-black text-white focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          value={quantity}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value);
+                            if (!isNaN(val)) {
+                               setQuantity(Math.min(Math.max(1, val), selectedProduct.stock));
+                            }
+                          }}
+                        />
                         <button 
                           onClick={() => setQuantity(Math.min(selectedProduct.stock, quantity + 1))}
                           className="p-3 rounded-xl hover:bg-slate-800 text-slate-400 transition-all"

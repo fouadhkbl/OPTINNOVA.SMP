@@ -4,9 +4,9 @@ import {
   Wallet, Award, Clock, PlusCircle, CreditCard, Shield, Gift, User, 
   ShoppingBag, Loader2, AlertCircle, CheckCircle2, ArrowDownCircle, 
   ArrowUpCircle, X, ChevronRight, MessageSquare, Send, Key, Copy, Check, 
-  RefreshCcw, Info
+  RefreshCcw, Info, Trophy, Gamepad2
 } from 'lucide-react';
-import { UserProfile, Order, Message } from '../types';
+import { UserProfile, Order, Message, TournamentRegistration } from '../types';
 import { supabase } from '../lib/supabase';
 import { DH_TO_USD, POINTS_PER_DOLLAR, FEE_PERCENTAGE, FLAT_FEE_USD } from '../constants.tsx';
 
@@ -18,6 +18,8 @@ const StatusBadge = ({ status }: { status: string }) => {
     completed: 'bg-green-500/10 text-green-500 border-green-500/20',
     cancelled: 'bg-red-500/10 text-red-500 border-red-500/20',
     refunded: 'bg-blue-500/10 text-blue-500 border-blue-500/20',
+    approved: 'bg-green-500/10 text-green-500 border-green-500/20',
+    rejected: 'bg-red-500/10 text-red-500 border-red-500/20',
   };
 
   return (
@@ -161,17 +163,23 @@ export default function ProfilePage({ user, setUser }: { user: UserProfile, setU
   const [showFundingModal, setShowFundingModal] = useState(false);
   const [activeChatOrder, setActiveChatOrder] = useState<Order | null>(null);
   const [revealOrder, setRevealOrder] = useState<string | null>(null);
+  
   const [orders, setOrders] = useState<any[]>([]);
   const [walletHistory, setWalletHistory] = useState<any[]>([]);
+  const [registrations, setRegistrations] = useState<TournamentRegistration[]>([]);
+  
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [loadingTournaments, setLoadingTournaments] = useState(true);
+  
   const [paymentError, setPaymentError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'orders' | 'history'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'history' | 'tournaments'>('orders');
   const paypalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchUserOrders();
     fetchWalletHistory();
+    fetchRegistrations();
   }, [user.id]);
 
   useEffect(() => {
@@ -215,6 +223,17 @@ export default function ProfilePage({ user, setUser }: { user: UserProfile, setU
       .order('created_at', { ascending: false });
     if (!error && data) setWalletHistory(data);
     setLoadingHistory(false);
+  };
+
+  const fetchRegistrations = async () => {
+    setLoadingTournaments(true);
+    const { data, error } = await supabase
+      .from('tournament_registrations')
+      .select('*, tournaments(*)')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    if (!error && data) setRegistrations(data);
+    setLoadingTournaments(false);
   };
 
   const handlePaymentSuccess = async (amountDh: number, transactionId: string) => {
@@ -288,8 +307,9 @@ export default function ProfilePage({ user, setUser }: { user: UserProfile, setU
               <div className="flex bg-slate-900 p-1.5 rounded-2xl border border-slate-800 w-fit">
                 <button onClick={() => setActiveTab('orders')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'orders' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Orders</button>
                 <button onClick={() => setActiveTab('history')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'history' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>Wallet History</button>
+                <button onClick={() => setActiveTab('tournaments')} className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'tournaments' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>My Tournaments</button>
               </div>
-              <button onClick={() => activeTab === 'orders' ? fetchUserOrders() : fetchWalletHistory()} className="p-2 text-slate-600 hover:text-blue-400 transition-colors">
+              <button onClick={() => { if(activeTab === 'orders') fetchUserOrders(); else if(activeTab === 'history') fetchWalletHistory(); else fetchRegistrations(); }} className="p-2 text-slate-600 hover:text-blue-400 transition-colors">
                 <RefreshCcw size={18} />
               </button>
             </div>
@@ -357,7 +377,7 @@ export default function ProfilePage({ user, setUser }: { user: UserProfile, setU
                     )}
                   </div>
                 ))
-              ) : (
+              ) : activeTab === 'history' ? (
                 loadingHistory ? <Loader2 className="animate-spin text-blue-500 mx-auto py-12" /> : walletHistory.length === 0 ? (
                   <div className="text-center py-20 opacity-30">
                     <Wallet size={48} className="mx-auto mb-4" />
@@ -376,6 +396,31 @@ export default function ProfilePage({ user, setUser }: { user: UserProfile, setU
                     </div>
                     <div className={`font-black ${entry.amount > 0 ? 'text-green-500' : 'text-red-500'}`}>{entry.amount > 0 ? '+' : ''}{entry.amount} DH</div>
                   </div>
+                ))
+              ) : (
+                loadingTournaments ? <Loader2 className="animate-spin text-blue-500 mx-auto py-12" /> : registrations.length === 0 ? (
+                  <div className="text-center py-20 opacity-30">
+                     <Trophy size={48} className="mx-auto mb-4" />
+                     <p className="text-sm font-black uppercase tracking-widest">No tournament registrations.</p>
+                  </div>
+                ) : registrations.map(reg => (
+                   <div key={reg.id} className="p-6 rounded-3xl bg-slate-900/30 border border-slate-800 flex justify-between items-center group hover:border-blue-500/20 transition-all">
+                      <div className="flex items-center gap-4">
+                         <div className="w-12 h-12 bg-purple-500/10 rounded-2xl flex items-center justify-center text-purple-400">
+                            <Gamepad2 size={24} />
+                         </div>
+                         <div>
+                            <h4 className="font-bold text-white">{reg.tournaments?.title}</h4>
+                            <div className="flex items-center gap-2 mt-1">
+                               <StatusBadge status={reg.status} />
+                               <span className="text-[10px] text-slate-500 font-black uppercase">{new Date(reg.created_at).toLocaleDateString()}</span>
+                            </div>
+                         </div>
+                      </div>
+                      {reg.status === 'approved' && <div className="text-green-500"><CheckCircle2 size={24} /></div>}
+                      {reg.status === 'pending' && <div className="text-yellow-500"><Clock size={24} /></div>}
+                      {reg.status === 'rejected' && <div className="text-red-500"><AlertCircle size={24} /></div>}
+                   </div>
                 ))
               )}
             </div>

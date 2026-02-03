@@ -6,6 +6,56 @@
   <title>Moon Night | Digital Shop</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://www.paypal.com/sdk/js?client-id=sb&currency=USD"></script>
+  <script>
+    // --- CRITICAL POLYFILLS FOR BROWSER ---
+    // These prevent the "blank screen" crash by mocking Node.js globals required by @google/genai
+    window.global = window;
+    
+    // 1. Process Polyfill
+    window.process = { 
+      env: { NODE_ENV: 'development' },
+      version: '',
+      versions: {},
+      platform: 'browser',
+      nextTick: function(cb) { setTimeout(cb, 0); }
+    };
+
+    // 2. Buffer Polyfill (Enhanced for stability)
+    if (!window.Buffer) {
+      window.Buffer = {
+        isBuffer: function() { return false; },
+        from: function(data, encoding) { 
+           if (encoding === 'base64') {
+               try { return Uint8Array.from(atob(data), c => c.charCodeAt(0)); } catch(e) { return new Uint8Array(0); }
+           }
+           if (data instanceof Uint8Array) return data;
+           if (typeof data === 'string') return new TextEncoder().encode(data);
+           return new Uint8Array(0);
+        },
+        alloc: function(size) { return new Uint8Array(size); },
+        concat: function(list) {
+            let length = 0;
+            for(let i=0; i<list.length; i++) length += list[i].length;
+            let result = new Uint8Array(length);
+            let pos = 0;
+            for(let i=0; i<list.length; i++) {
+                result.set(list[i], pos);
+                pos += list[i].length;
+            }
+            return result;
+        }
+      };
+    }
+
+    // 3. Global Error Handler for Startup Crashes
+    window.onerror = function(message, source, lineno, colno, error) {
+      const root = document.getElementById('root');
+      if (root && root.innerHTML.trim() === '') {
+        document.getElementById('startup-error').style.display = 'flex';
+        document.getElementById('error-details').innerText = message + "\n" + source + ":" + lineno;
+      }
+    };
+  </script>
   <script type="importmap">
   {
     "imports": {
@@ -13,9 +63,10 @@
       "react/": "https://esm.sh/react@^19.2.4/",
       "react-dom": "https://esm.sh/react-dom@^19.2.4",
       "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-      "react-router-dom": "https://esm.sh/react-router-dom@^7.13.0",
+      "react-router-dom": "https://esm.sh/react-router-dom@^6.28.0",
       "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.93.3",
-      "lucide-react": "https://esm.sh/lucide-react@^0.563.0"
+      "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
+      "@google/genai": "https://cdn.jsdelivr.net/npm/@google/genai@0.1.1/+esm"
     }
   }
   </script>
@@ -81,6 +132,17 @@
 </head>
 <body>
   <div id="root"></div>
+  
+  <!-- Startup Error Fallback (Hidden by default) -->
+  <div id="startup-error" style="display: none; position: fixed; inset: 0; background: #020617; z-index: 9999; flex-direction: column; align-items: center; justify-content: center; padding: 20px;">
+    <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); padding: 30px; border-radius: 20px; max-width: 500px; width: 100%;">
+      <h2 style="color: #f87171; font-weight: 900; font-size: 24px; margin-bottom: 10px;">Startup Failure</h2>
+      <p style="color: #94a3b8; margin-bottom: 20px;">The application encountered a critical error while loading.</p>
+      <pre id="error-details" style="background: #0f172a; padding: 15px; border-radius: 10px; overflow-x: auto; font-family: monospace; font-size: 12px; color: #cbd5e1;"></pre>
+      <button onclick="window.location.reload()" style="margin-top: 20px; background: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 10px; font-weight: bold; cursor: pointer;">Retry Connection</button>
+    </div>
+  </div>
+
   <script type="module" src="index.tsx"></script>
 </body>
 </html>

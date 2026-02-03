@@ -46,6 +46,7 @@ export interface Order {
   delivery_data: string;
   created_at: string;
   products?: Product;
+  profiles?: UserProfile;
 }
 
 export interface PointShopItem {
@@ -56,6 +57,12 @@ export interface PointShopItem {
   image_url?: string;
 }
 
+export interface RegistrationField {
+  name: string;
+  type: 'text' | 'number';
+  required: boolean;
+}
+
 export interface Tournament {
   id: string;
   title: string;
@@ -64,6 +71,17 @@ export interface Tournament {
   prize_pool: string;
   status: 'upcoming' | 'ongoing' | 'finished';
   date: string;
+  registration_fields?: RegistrationField[];
+}
+
+export interface TournamentRegistration {
+  id: string;
+  tournament_id: string;
+  user_id: string;
+  status: 'pending' | 'approved' | 'rejected';
+  submitted_data: Record<string, string>;
+  created_at: string;
+  tournaments?: Tournament;
 }
 
 export interface AuditLog {

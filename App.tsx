@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   BrowserRouter as Router, 
@@ -19,11 +20,15 @@ import {
   LogOut, 
   X, 
   Trash2, 
-  Loader2 
+  Loader2,
+  Menu
 } from 'lucide-react';
 import { supabase } from './lib/supabase.ts';
 import { UserProfile, CartItem } from './types.ts';
 import { LOGO_URL, APP_NAME } from './constants.tsx';
+
+// Components
+import AIAssistant from './components/AIAssistant.tsx';
 
 // Pages
 import HomePage from './pages/HomePage.tsx';
@@ -37,6 +42,7 @@ import SignUpPage from './pages/SignUpPage.tsx';
 
 const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, setUser: any, cart: CartItem[], setCart: any }) => {
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const navigate = useNavigate();
@@ -55,6 +61,11 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
       setIsLoggingOut(false);
     }
   };
+
+  // Close mobile menu when route changes
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [location.pathname]);
 
   const navItems = [
     { label: 'Home', icon: Home, path: '/' },
@@ -111,13 +122,24 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
     <div className="min-h-screen bg-[#020617] text-slate-100 flex flex-col">
       <nav className="sticky top-0 z-50 glass border-b border-slate-800/50 px-4 md:px-8 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-3 group">
-            <img src={LOGO_URL} alt="Logo" className="w-10 h-10 object-contain rounded-full" />
-            <span className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-600">
-              {APP_NAME}
-            </span>
-          </Link>
+          <div className="flex items-center gap-4">
+            {/* Mobile Menu Button */}
+            <button 
+              onClick={() => setIsMobileMenuOpen(true)} 
+              className="md:hidden p-2 text-slate-400 hover:text-white"
+            >
+              <Menu size={24} />
+            </button>
 
+            <Link to="/" className="flex items-center gap-3 group">
+              <img src={LOGO_URL} alt="Logo" className="w-10 h-10 object-contain rounded-full" />
+              <span className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-600">
+                {APP_NAME}
+              </span>
+            </Link>
+          </div>
+
+          {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-6">
             {navItems.map((item) => (
               <Link key={item.path} to={item.path} className={`flex items-center gap-2 transition-all font-bold text-xs uppercase tracking-widest ${location.pathname === item.path ? 'text-blue-400' : 'text-slate-400 hover:text-blue-400'}`}>
@@ -125,7 +147,6 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
                 {item.label}
               </Link>
             ))}
-            {/* Admin link now always visible for "everyone" access */}
             <Link to="/admin" className="flex items-center gap-2 text-red-400 hover:text-red-300 transition-all font-bold text-xs uppercase tracking-widest">
               <Lock size={16} /> Admin
             </Link>
@@ -162,6 +183,41 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
           </div>
         </div>
       </nav>
+
+      {/* Mobile Menu Drawer */}
+      {isMobileMenuOpen && (
+        <div className="fixed inset-0 z-[60] md:hidden">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}></div>
+          <div className="absolute top-0 left-0 bottom-0 w-3/4 max-w-sm bg-[#020617] border-r border-slate-800 p-6 shadow-2xl animate-in slide-in-from-left duration-300">
+            <div className="flex items-center justify-between mb-8">
+               <span className="text-xl font-black text-white">Menu</span>
+               <button onClick={() => setIsMobileMenuOpen(false)}><X size={24} className="text-slate-400" /></button>
+            </div>
+            <div className="flex flex-col gap-4">
+              {navItems.map((item) => (
+                <Link 
+                  key={item.path} 
+                  to={item.path} 
+                  className={`flex items-center gap-4 p-4 rounded-xl font-bold text-sm uppercase tracking-widest transition-all ${location.pathname === item.path ? 'bg-blue-600/10 text-blue-400 border border-blue-600/20' : 'text-slate-400 hover:bg-slate-900'}`}
+                >
+                  <item.icon size={20} />
+                  {item.label}
+                </Link>
+              ))}
+               <Link to="/admin" className="flex items-center gap-4 p-4 rounded-xl font-bold text-sm uppercase tracking-widest text-red-400 hover:bg-red-500/10 transition-all mt-4 border-t border-slate-800">
+                  <Lock size={20} /> Admin Panel
+               </Link>
+            </div>
+            
+            {user && (
+              <div className="absolute bottom-8 left-6 right-6 p-4 bg-slate-900 rounded-2xl border border-slate-800">
+                 <div className="text-xs text-slate-500 font-black uppercase tracking-widest mb-1">Current Balance</div>
+                 <div className="text-xl font-black text-white">{user.wallet_balance?.toFixed(2)} DH</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Cart Drawer */}
       {isCartOpen && (
@@ -223,6 +279,9 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
+      
+      {/* Global AI Assistant */}
+      <AIAssistant />
     </div>
   );
 };
