@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Sparkles, Bot, Minimize2, Loader2, BrainCircuit, AlertTriangle, WifiOff } from 'lucide-react';
 // import { GoogleGenAI } from "@google/genai"; // Dynamic import used instead
@@ -90,7 +89,9 @@ export default function AIAssistant() {
         ],
         config: {
           systemInstruction: SYSTEM_PROMPT,
-          thinkingConfig: { thinkingBudget: 32768 } // High thinking budget for complex reasoning
+          // Enabling Thinking Mode with max budget
+          thinkingConfig: { thinkingBudget: 32768 } 
+          // Do NOT set maxOutputTokens when thinkingBudget is high, as instructed
         }
       });
 
@@ -143,7 +144,7 @@ export default function AIAssistant() {
             <h3 className="font-black text-white text-sm">Fouad AI</h3>
             <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-              Thinking Mode Active
+              Thinking 3.0 Active
             </p>
           </div>
         </div>
@@ -183,7 +184,7 @@ export default function AIAssistant() {
             <div className="bg-slate-900/80 border border-blue-500/30 px-5 py-4 rounded-2xl rounded-tl-sm flex items-center gap-3">
               <BrainCircuit size={18} className="text-blue-400 animate-pulse" />
               <div className="space-y-1">
-                <span className="text-[10px] text-blue-400 font-black uppercase tracking-widest block">Thinking...</span>
+                <span className="text-[10px] text-blue-400 font-black uppercase tracking-widest block">Deep Reasoning...</span>
                 <div className="flex gap-1">
                   <div className="w-1 h-1 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
                   <div className="w-1 h-1 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
