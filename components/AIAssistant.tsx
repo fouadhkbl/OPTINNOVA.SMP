@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Sparkles, Bot, Minimize2, Loader2, BrainCircuit, AlertTriangle, WifiOff } from 'lucide-react';
-// import { GoogleGenAI } from "@google/genai"; // Dynamic import used instead
+import { Send, Sparkles, Bot, Minimize2, Loader2, BrainCircuit, AlertTriangle, Lightbulb } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const SYSTEM_PROMPT = `You are Moon Night's advanced AI Fouad. 
@@ -9,7 +8,8 @@ You have access to the current product catalog and tournament list in the contex
 Be helpful, concise, and maintain a cool, cyberpunk/digital tone.
 If a user asks about a specific product, provide its price (in DH) and details.
 If a user asks about tournaments, list upcoming ones and mention the registration requirements.
-Use your advanced reasoning capabilities (Thinking Mode) to answer complex queries, compare items, or analyze user needs deeply.`;
+Use your advanced reasoning capabilities (Thinking Mode) to answer complex queries, compare items, or analyze user needs deeply.
+When thinking, consider multiple angles before providing the final recommendation.`;
 
 export default function AIAssistant() {
   const [isOpen, setIsOpen] = useState(false);
@@ -109,7 +109,8 @@ export default function AIAssistant() {
       if (errorMsg.includes("400")) errorMsg = "Bad Request: The model rejected the data format.";
       if (errorMsg.includes("401")) errorMsg = "Unauthorized: Invalid API Key.";
       if (errorMsg.includes("403")) errorMsg = "Access Denied: Your API Key location/quota is restricted.";
-      
+      if (errorMsg.includes("ETARGET")) errorMsg = "Deployment Error: Version mismatch. Please refresh.";
+
       setMessages(prev => [...prev, { role: 'error', text: errorMsg }]);
     } finally {
       setLoading(false);
@@ -137,15 +138,18 @@ export default function AIAssistant() {
       {/* Header */}
       <div className="p-4 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white shadow-lg">
-            <Bot size={20} />
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white shadow-lg relative overflow-hidden group">
+            <Bot size={20} className="relative z-10" />
+            <div className="absolute inset-0 bg-white/20 blur-lg group-hover:animate-pulse"></div>
           </div>
           <div>
             <h3 className="font-black text-white text-sm">Fouad AI</h3>
-            <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-              Thinking 3.0 Active
-            </p>
+            <div className="flex items-center gap-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${isThinking ? 'bg-purple-500 animate-ping' : 'bg-green-500'}`}></span>
+              <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest">
+                {isThinking ? 'Thinking Mode' : 'Online'}
+              </p>
+            </div>
           </div>
         </div>
         <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors text-slate-400 hover:text-white">
@@ -157,9 +161,11 @@ export default function AIAssistant() {
       <div className="flex-grow overflow-y-auto p-4 space-y-4 custom-scrollbar bg-slate-950/50">
         {messages.length === 0 && (
           <div className="text-center py-12 space-y-4 opacity-60">
-            <Sparkles size={32} className="mx-auto text-blue-500" />
-            <p className="text-xs font-medium text-slate-400 px-8">
-              "I am Fouad AI. I can analyze shop inventory, compare prices, or help with tournament info."
+            <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce duration-[3s]">
+              <Sparkles size={24} className="text-blue-500" />
+            </div>
+            <p className="text-xs font-medium text-slate-400 px-8 leading-relaxed">
+              "I am Fouad AI. Powered by <span className="text-blue-400 font-bold">Gemini 3.0</span>. I can analyze shop inventory, compare prices, or help with tournament info using deep reasoning."
             </p>
           </div>
         )}
@@ -168,27 +174,32 @@ export default function AIAssistant() {
           <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[85%] p-4 text-sm font-medium rounded-2xl ${
               msg.role === 'user' 
-                ? 'bg-blue-600 text-white rounded-tr-sm' 
+                ? 'bg-blue-600 text-white rounded-tr-sm shadow-lg shadow-blue-600/10' 
                 : msg.role === 'error'
                 ? 'bg-red-500/10 border border-red-500/50 text-red-200 rounded-tl-sm'
-                : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-tl-sm'
+                : 'bg-slate-800/80 backdrop-blur-sm text-slate-200 border border-slate-700 rounded-tl-sm shadow-lg'
             }`}>
-              {msg.role === 'error' && <div className="flex items-center gap-2 mb-1 text-red-400 font-bold uppercase text-[10px] tracking-widest"><AlertTriangle size={12}/> Connection Error</div>}
+              {msg.role === 'error' && <div className="flex items-center gap-2 mb-2 text-red-400 font-bold uppercase text-[10px] tracking-widest border-b border-red-500/20 pb-1"><AlertTriangle size={12}/> Connection Error</div>}
               {msg.text}
             </div>
           </div>
         ))}
         
         {loading && (
-          <div className="flex justify-start animate-in fade-in">
-            <div className="bg-slate-900/80 border border-blue-500/30 px-5 py-4 rounded-2xl rounded-tl-sm flex items-center gap-3">
-              <BrainCircuit size={18} className="text-blue-400 animate-pulse" />
-              <div className="space-y-1">
-                <span className="text-[10px] text-blue-400 font-black uppercase tracking-widest block">Deep Reasoning...</span>
-                <div className="flex gap-1">
-                  <div className="w-1 h-1 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
-                  <div className="w-1 h-1 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                  <div className="w-1 h-1 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+          <div className="flex justify-start animate-in fade-in slide-in-from-bottom-2">
+            <div className="bg-slate-900/90 backdrop-blur-xl border border-blue-500/30 px-5 py-4 rounded-2xl rounded-tl-sm flex items-center gap-4 shadow-xl shadow-blue-900/20">
+              <div className="relative">
+                <BrainCircuit size={20} className="text-purple-400 animate-pulse" />
+                <div className="absolute inset-0 bg-purple-500/20 blur-lg animate-pulse"></div>
+              </div>
+              <div className="space-y-1.5">
+                <span className="text-[10px] text-purple-300 font-black uppercase tracking-widest flex items-center gap-2">
+                  Deep Reasoning <Lightbulb size={10} className="fill-purple-300" />
+                </span>
+                <div className="flex gap-1.5">
+                  <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
+                  <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }}></div>
+                  <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
                 </div>
               </div>
             </div>
