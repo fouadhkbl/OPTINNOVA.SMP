@@ -27,9 +27,6 @@ import { supabase } from './lib/supabase.ts';
 import { UserProfile, CartItem } from './types.ts';
 import { LOGO_URL, APP_NAME } from './constants.tsx';
 
-// Components
-import AIAssistant from './components/AIAssistant.tsx';
-
 // Pages
 import HomePage from './pages/HomePage.tsx';
 import ShopPage from './pages/ShopPage.tsx';
@@ -279,9 +276,6 @@ const Layout = ({ user, setUser, cart, setCart }: { user: UserProfile | null, se
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
-      
-      {/* Global AI Assistant */}
-      <AIAssistant />
     </div>
   );
 };

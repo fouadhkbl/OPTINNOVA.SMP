@@ -115,15 +115,6 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 10. AI Chat History
-CREATE TABLE IF NOT EXISTS public.ai_chats (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
-    role TEXT NOT NULL, -- 'user' or 'model'
-    content TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
-);
-
 -- RLS
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public Profiles access" ON public.profiles;
@@ -160,15 +151,6 @@ CREATE POLICY "Public Tournament Regs access" ON public.tournament_registrations
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Public Audit access" ON public.audit_logs;
 CREATE POLICY "Public Audit access" ON public.audit_logs FOR ALL USING (true) WITH CHECK (true);
-
-ALTER TABLE public.ai_chats ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users view own chats" ON public.ai_chats;
-CREATE POLICY "Users view own chats" ON public.ai_chats FOR SELECT USING (auth.uid() = user_id);
--- Note: Service role bypasses RLS, so specific INSERT policies for backend might not be needed if using service key, 
--- but good for frontend access if needed.
-DROP POLICY IF EXISTS "Users insert own chats" ON public.ai_chats;
-CREATE POLICY "Users insert own chats" ON public.ai_chats FOR INSERT WITH CHECK (auth.uid() = user_id);
-
 
 -- Functions
 CREATE OR REPLACE FUNCTION public.process_checkout(cart_items JSONB)
