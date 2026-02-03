@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { createClient } from "@supabase/supabase-js";
 
 const SYSTEM_PROMPT = `You are Moon Night's advanced AI Fouad. 
 Your goal is to help users navigate the digital shop, find products (Accounts, Keys, Services), and get information about Tournaments.
@@ -18,20 +19,53 @@ export default async function handler(request: Request) {
   }
 
   try {
-    const { message, contextData } = await request.json();
+    const { message, userId } = await request.json();
 
+    // 1. Validate API Key
     if (!process.env.API_KEY) {
       throw new Error("Server API configuration missing.");
     }
 
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // 2. Initialize Supabase (Backend)
+    const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+    // Prefer Service Role Key for backend operations to bypass RLS when inserting chat logs
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error("Database configuration missing.");
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // 3. Fetch Context Data from Supabase
+    // We fetch a limited set to keep token usage optimized
+    const { data: products } = await supabase
+      .from('products')
+      .select('name, price_dh, category, type, stock, description')
+      .limit(50);
+
+    const { data: tournaments } = await supabase
+      .from('tournaments')
+      .select('title, prize_pool, status, tournament_date, role_required')
+      .eq('status', 'upcoming');
 
     const contextStr = `
       Current Date: ${new Date().toISOString()}
-      Products Catalog: ${JSON.stringify((contextData?.products || []).slice(0, 50))}
-      Active Tournaments: ${JSON.stringify(contextData?.tournaments || [])}
+      Products Catalog: ${JSON.stringify(products || [])}
+      Active Tournaments: ${JSON.stringify(tournaments || [])}
     `;
 
+    // 4. Save User Message (if user logged in)
+    if (userId) {
+      await supabase.from('ai_chats').insert({
+        user_id: userId,
+        role: 'user',
+        content: message
+      });
+    }
+
+    // 5. Generate AI Response
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
       contents: [
@@ -46,7 +80,16 @@ export default async function handler(request: Request) {
       }
     });
 
-    const text = response.text || "No response generated.";
+    const text = response.text || "I'm processing that, but received no text response.";
+
+    // 6. Save AI Response (if user logged in)
+    if (userId) {
+      await supabase.from('ai_chats').insert({
+        user_id: userId,
+        role: 'model',
+        content: text
+      });
+    }
 
     return new Response(JSON.stringify({ text }), {
       status: 200,
@@ -54,7 +97,7 @@ export default async function handler(request: Request) {
     });
 
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
+    console.error("AI Handler Error:", error);
     return new Response(JSON.stringify({ 
       error: error.message || "Failed to process AI request" 
     }), {

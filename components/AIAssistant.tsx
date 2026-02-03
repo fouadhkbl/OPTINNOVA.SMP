@@ -8,18 +8,35 @@ export default function AIAssistant() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
-  const [contextData, setContextData] = useState<{products: any[], tournaments: any[]}>({ products: [], tournaments: [] });
+  const [userId, setUserId] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Load User and Chat History on Mount
   useEffect(() => {
-    const fetchData = async () => {
-      const { data: products } = await supabase.from('products').select('name, price_dh, category, type, stock, description');
-      const { data: tournaments } = await supabase.from('tournaments').select('title, prize_pool, status, tournament_date, role_required');
-      setContextData({ products: products || [], tournaments: tournaments || [] });
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUserId(user?.id || null);
+
+      if (user) {
+        // Fetch chat history
+        const { data: history } = await supabase
+          .from('ai_chats')
+          .select('role, content')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: true })
+          .limit(50);
+
+        if (history) {
+          setMessages(history.map(h => ({
+            role: h.role as 'user' | 'model',
+            text: h.content
+          })));
+        }
+      }
     };
-    fetchData();
-  }, []);
+    init();
+  }, [isOpen]); // Reload when opened to ensure fresh state
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -45,7 +62,7 @@ export default function AIAssistant() {
         },
         body: JSON.stringify({
           message: userMsg,
-          contextData: contextData
+          userId: userId // Pass userId so backend can save the chat
         }),
       });
 
