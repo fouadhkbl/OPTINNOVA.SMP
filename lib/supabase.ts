@@ -19,7 +19,7 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
     detectSessionInUrl: true,
     storageKey: 'moon-night-auth-session',
   },
-});
+}) as any;
 
 export const logAdminAction = async (
   action: string,

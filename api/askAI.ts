@@ -1,4 +1,3 @@
-import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 
 const SYSTEM_PROMPT = `You are Moon Night's advanced AI Fouad. 
@@ -21,70 +20,90 @@ export default async function handler(request: Request) {
   try {
     const { message, userId } = await request.json();
 
-    // 1. Validate API Key
-    if (!process.env.API_KEY) {
-      throw new Error("Server API configuration missing.");
-    }
-
-    // 2. Initialize Supabase (Backend)
+    // 1. Validate API Keys
+    const apiKey = process.env.API_KEY;
     const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-    // Prefer Service Role Key for backend operations to bypass RLS when inserting chat logs
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY; 
 
-    if (!supabaseUrl || !supabaseKey) {
-      throw new Error("Database configuration missing.");
+    if (!apiKey) {
+      throw new Error("Server API configuration missing (API_KEY).");
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // 2. Initialize Supabase Admin Client
+    let supabaseAdmin = null;
+    if (supabaseUrl && supabaseServiceKey) {
+      supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+        auth: { persistSession: false }
+      });
+    }
 
-    // 3. Fetch Context Data from Supabase
-    // We fetch a limited set to keep token usage optimized
-    const { data: products } = await supabase
-      .from('products')
-      .select('name, price_dh, category, type, stock, description')
-      .limit(50);
+    // 3. Fetch Context
+    let contextStr = "Context unavailable";
+    if (supabaseAdmin) {
+      const { data: products } = await supabaseAdmin
+        .from('products')
+        .select('name, price_dh, category, type, stock, description')
+        .limit(50);
 
-    const { data: tournaments } = await supabase
-      .from('tournaments')
-      .select('title, prize_pool, status, tournament_date, role_required')
-      .eq('status', 'upcoming');
+      const { data: tournaments } = await supabaseAdmin
+        .from('tournaments')
+        .select('title, prize_pool, status, tournament_date, role_required')
+        .eq('status', 'upcoming');
 
-    const contextStr = `
-      Current Date: ${new Date().toISOString()}
-      Products Catalog: ${JSON.stringify(products || [])}
-      Active Tournaments: ${JSON.stringify(tournaments || [])}
-    `;
+      contextStr = `
+        Current Date: ${new Date().toISOString()}
+        Products Catalog: ${JSON.stringify(products || [])}
+        Active Tournaments: ${JSON.stringify(tournaments || [])}
+      `;
+    }
 
-    // 4. Save User Message (if user logged in)
-    if (userId) {
-      await supabase.from('ai_chats').insert({
+    // 4. Save User Message
+    if (userId && supabaseAdmin) {
+      await supabaseAdmin.from('ai_chats').insert({
         user_id: userId,
         role: 'user',
         content: message
       });
     }
 
-    // 5. Generate AI Response
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: `System Context: ${contextStr}\n\nUser Query: ${message}` }]
+    // 5. Generate AI Response using REST API (Removing SDK Dependency)
+    // Using gemini-2.0-flash which is generally stable for REST
+    const model = 'gemini-2.0-flash';
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    const apiResponse = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: `System Context: ${contextStr}\n\nUser Query: ${message}` }]
+          }
+        ],
+        systemInstruction: {
+          parts: [{ text: SYSTEM_PROMPT }]
+        },
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 1000
         }
-      ],
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        thinkingConfig: { thinkingBudget: 32768 } // 32k token thinking budget
-      }
+      })
     });
 
-    const text = response.text || "I'm processing that, but received no text response.";
+    if (!apiResponse.ok) {
+      const errorData = await apiResponse.json().catch(() => ({}));
+      throw new Error(`Gemini API Error: ${errorData.error?.message || apiResponse.statusText}`);
+    }
 
-    // 6. Save AI Response (if user logged in)
-    if (userId) {
-      await supabase.from('ai_chats').insert({
+    const responseJson = await apiResponse.json();
+    const text = responseJson.candidates?.[0]?.content?.parts?.[0]?.text || "I'm processing that, but received no text response.";
+
+    // 6. Save AI Response
+    if (userId && supabaseAdmin) {
+      await supabaseAdmin.from('ai_chats').insert({
         user_id: userId,
         role: 'model',
         content: text

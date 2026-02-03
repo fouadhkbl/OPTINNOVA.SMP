@@ -8,7 +8,6 @@
   <script src="https://www.paypal.com/sdk/js?client-id=sb&currency=USD"></script>
   <script>
     // --- CRITICAL POLYFILLS FOR BROWSER ---
-    // These prevent the "blank screen" crash by mocking Node.js globals required by @google/genai
     window.global = window;
     
     // 1. Process Polyfill
@@ -20,7 +19,7 @@
       nextTick: function(cb) { setTimeout(cb, 0); }
     };
 
-    // 2. Buffer Polyfill (Enhanced for stability)
+    // 2. Buffer Polyfill
     if (!window.Buffer) {
       window.Buffer = {
         isBuffer: function() { return false; },
@@ -65,8 +64,7 @@
       "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
       "react-router-dom": "https://esm.sh/react-router-dom@^6.28.0",
       "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.93.3",
-      "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
-      "@google/genai": "https://esm.sh/@google/genai@0.2.1"
+      "lucide-react": "https://esm.sh/lucide-react@^0.563.0"
     }
   }
   </script>
