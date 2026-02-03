@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Send, Sparkles, Bot, Minimize2, Loader2, BrainCircuit, AlertTriangle, Lightbulb } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import GoogleGenAI from "@google/genai"; // ✅ Fixed import
 
 const SYSTEM_PROMPT = `You are Moon Night's advanced AI Fouad. 
 Your goal is to help users navigate the digital shop, find products (Accounts, Keys, Services), and get information about Tournaments.
@@ -49,36 +50,17 @@ export default function AIAssistant() {
     setIsThinking(true);
 
     try {
-      // Safe access to API Key for browser environments
-      const apiKey = (window as any).process?.env?.API_KEY || (import.meta as any).env?.VITE_GOOGLE_API_KEY;
-      
-      if (!apiKey) {
-        throw new Error("Missing API Key. Please add VITE_GOOGLE_API_KEY to your environment variables.");
-      }
+      const apiKey = process.env.API_KEY || (import.meta as any).env?.VITE_GOOGLE_API_KEY || (window as any).process?.env?.API_KEY;
+      if (!apiKey) throw new Error("Missing API Key. Please add VITE_GOOGLE_API_KEY to your environment variables.");
 
-      // DYNAMIC IMPORT with Error Handling and Fallbacks
-      let GoogleGenAI;
-      try {
-        const module = await import("@google/genai");
-        // Robust check for different CDN export structures
-        GoogleGenAI = module.GoogleGenAI || module.default || module;
-      } catch (err) {
-        throw new Error("Failed to load Fouad AI Brain. Network connection blocked the library download.");
-      }
+      const ai = new GoogleGenAI({ apiKey }); // ✅ Correct usage
 
-      if (!GoogleGenAI) {
-        throw new Error("AI Library loaded but the Class was not found.");
-      }
-
-      const ai = new GoogleGenAI({ apiKey });
-      
       const contextStr = `
         Current Date: ${new Date().toISOString()}
         Products Catalog: ${JSON.stringify(contextData.products.slice(0, 50))}
         Active Tournaments: ${JSON.stringify(contextData.tournaments)}
       `;
 
-      // 'contents' must be an Array for Gemini API
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
         contents: [
@@ -89,9 +71,7 @@ export default function AIAssistant() {
         ],
         config: {
           systemInstruction: SYSTEM_PROMPT,
-          // Enabling Thinking Mode with max budget (32k tokens)
           thinkingConfig: { thinkingBudget: 32768 }
-          // maxOutputTokens is intentionally omitted to allow full model reasoning
         }
       });
 
@@ -101,11 +81,7 @@ export default function AIAssistant() {
     } catch (error: any) {
       console.error("AI Error:", error);
       let errorMsg = error.message || "Unknown connection error.";
-      
-      // Improve error messages for user
-      if (errorMsg.includes("Failed to fetch") || errorMsg.includes("Network")) {
-         errorMsg = "Network Error: Cannot reach AI servers. Please check your connection.";
-      }
+      if (errorMsg.includes("Failed to fetch") || errorMsg.includes("Network")) errorMsg = "Network Error: Cannot reach AI servers. Please check your connection.";
       if (errorMsg.includes("400")) errorMsg = "Bad Request: The model rejected the data format.";
       if (errorMsg.includes("401")) errorMsg = "Unauthorized: Invalid API Key.";
       if (errorMsg.includes("403")) errorMsg = "Access Denied: Your API Key location/quota is restricted.";
