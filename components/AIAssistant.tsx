@@ -89,9 +89,9 @@ export default function AIAssistant() {
         ],
         config: {
           systemInstruction: SYSTEM_PROMPT,
-          // Enabling Thinking Mode with max budget
-          thinkingConfig: { thinkingBudget: 32768 } 
-          // Do NOT set maxOutputTokens when thinkingBudget is high, as instructed
+          // Enabling Thinking Mode with max budget (32k tokens)
+          thinkingConfig: { thinkingBudget: 32768 }
+          // maxOutputTokens is intentionally omitted to allow full model reasoning
         }
       });
 
