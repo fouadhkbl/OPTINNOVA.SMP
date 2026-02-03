@@ -1,9 +1,9 @@
 import { createClient, PostgrestError } from '@supabase/supabase-js';
 
-// Safe environment variable access
+// Safe environment variable access for Vite
 const getEnv = (key: string) => {
   try {
-    return (import.meta as any).env?.[key] || (process as any).env?.[key] || '';
+    return (import.meta as any).env?.[key] || '';
   } catch {
     return '';
   }
@@ -29,7 +29,6 @@ export const logAdminAction = async (
 ) => {
   const { data: { user } } = await supabase.auth.getUser();
   
-  // If no user, we log with a generic admin label or null for public access demo
   await supabase.from('audit_logs').insert({
     admin_id: user?.id || null, 
     action,
