@@ -17,11 +17,13 @@ export default function HomePage() {
       <section className="relative overflow-hidden py-16 md:py-32 text-center">
         {/* Animated Background Elements */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-600/20 blur-[140px] rounded-full -z-10 animate-pulse"></div>
-        <div className="absolute top-1/4 left-1/4 w-[300px] h-[300px] bg-purple-600/10 blur-[100px] rounded-full -z-10 animate-bounce duration-[12s]"></div>
+        {/* Changed duration from 12s to 20s for a smoother effect */}
+        <div className="absolute top-1/4 left-1/4 w-[300px] h-[300px] bg-purple-600/10 blur-[100px] rounded-full -z-10 animate-bounce duration-[20s]"></div>
         
         <div className="max-w-4xl mx-auto space-y-10 px-4">
+          {/* Changed text from "Premium" to "Elite" to test git change */}
           <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] font-black uppercase tracking-[0.3em] shadow-xl animate-fade-in">
-            <Zap size={14} className="fill-blue-400" /> Premium Digital Ecosystem
+            <Zap size={14} className="fill-blue-400" /> Elite Digital Ecosystem
           </div>
           
           <h1 className="text-6xl md:text-8xl font-black tracking-tighter leading-none animate-fade-in">
